@@ -30,8 +30,48 @@
 #
 ########################################################################################
 
-sub OWX_CCC_Alarms ($) {
-  my ($hash) = @_;
+package OWX_CCC;
+
+sub new($$) {
+	my ($class,$hash) = @_;
+
+	return bless {
+		hash => $hash,
+	}, $class;
+}
+
+sub Define($) {
+	my ($self,$dev) = @_;
+	my $hash = $self->{hash};
+		
+    $hash->{DeviceName} = $dev;
+    #-- Second step in case of CUNO: See if we can open it
+    my $msg = "OWX: COC/CUNO device $dev";
+    #-- hash des COC/CUNO
+    $owx_hwdevice = $main::defs{$dev};
+    if($owx_hwdevice){
+      main::Log(1,$msg." defined");
+      #-- store with OWX device
+      $hash->{INTERFACE} = "COC/CUNO";
+      $hash->{HWDEVICE}    = $owx_hwdevice;
+      #-- loop for some time until the state is "Initialized"
+      for(my $i=0;$i<6;$i++){
+        last if( $owx_hwdevice->{STATE} eq "Initialized");
+        main::Log(1,"OWX: Waiting, at t=$i ".$dev." is still ".$owx_hwdevice->{STATE});
+        select(undef,undef,undef,3); 
+      }
+      main::Log(1, "OWX: Can't open ".$dev) if( $owx_hwdevice->{STATE} ne "Initialized");
+      #-- reset the 1-Wire system in COC/CUNO
+      CUL_SimpleWrite($owx_hwdevice, "Oi");
+      return undef;
+    }else{
+      main::Log(1, $msg." not defined");
+      return $msg." not defined";
+    } 
+}
+
+sub Alarms () {
+  my ($self) = @_;
   
   return 0;
 } 
@@ -50,8 +90,9 @@ sub OWX_CCC_Alarms ($) {
 #
 ########################################################################################
 
-sub OWX_CCC_Complex ($$$$) {
-  my ($hash,$owx_dev,$data,$numread) =@_;
+sub Complex ($$$) {
+  my ($self,$owx_dev,$data,$numread) =@_;
+  my $hash = $self->{hash};
   
   my $select;
   my $res = "";
@@ -110,9 +151,11 @@ sub OWX_CCC_Complex ($$$$) {
 #
 ########################################################################################
 
-sub OWX_CCC_Discover ($) {
+sub Discover () {
   
-  my ($hash) = @_;
+  my ($self) = @_;
+  my $hash = $self->{hash};
+  
   my $res;
   
   #-- get the interface
@@ -157,8 +200,9 @@ sub OWX_CCC_Discover ($) {
 #
 ########################################################################################
 
-sub OWX_CCC_Init ($$) { 
-  my ($hash) = @_;
+sub Init () { 
+  my ($self) = @_;
+  my $hash = $self->{hash};
   
   #-- get the interface
   my $owx_hwdevice  = $hash->{HWDEVICE};
@@ -308,8 +352,9 @@ sub OWX_CCC_Receive ($$) {
 #
 ########################################################################################
 
-sub OWX_CCC_Reset ($) { 
-  my ($hash) = @_;
+sub Reset () { 
+  my ($self) = @_;
+  my $hash = $self->{hash};
   
   #-- get the interface
   my $owx_hwdevice  = $hash->{HWDEVICE};
@@ -366,8 +411,9 @@ sub OWX_CCC_Send ($$) {
 #
 ########################################################################################
 
-sub OWX_CCC_Verify ($$) {
-  my ($hash,$dev) = @_;
+sub Verify ($) {
+  my ($self,$dev) = @_;
+  my $hash = $self->{hash};
   
   my $i;
     

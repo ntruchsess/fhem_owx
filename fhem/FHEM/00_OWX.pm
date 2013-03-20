@@ -95,19 +95,10 @@ my %attrs = (
 );
 
 #-- some globals needed for the 1-Wire module
-#-- baud rate serial interface
-my $owx_baud=9600;
-my $owx_cmdlen;
 #-- Debugging 0,1,2,3
 my $owx_debug=0;
 #-- 8 byte 1-Wire device address
 my @owx_ROM_ID  =(0,0,0,0 ,0,0,0,0); 
-#-- 16 byte search string
-my @owx_search=(0,0,0,0 ,0,0,0,0, 0,0,0,0, 0,0,0,0);
-#-- search state for 1-Wire bus search
-my $owx_LastDiscrepancy = 0;
-my $owx_LastFamilyDiscrepancy = 0;
-my $owx_LastDeviceFlag = 0;
 
 ########################################################################################
 #
@@ -168,67 +159,29 @@ sub OWX_Define ($$) {
   #-- First step: check if we have a directly connected serial interface attached
   if ( $dev =~ m|$owgdevregexp|i){  
     require "$attr{global}{modpath}/FHEM/11_OWX_SER.pm";
-    #-- when the specified device name contains @<digits> already, use it as supplied
-    if ( $dev !~ m/\@\d*/ ){
-      $hash->{DeviceName} = $dev."\@9600";
-    }
-    #-- Second step in case of serial device: open the serial device to test it
-    my $msg = "OWX: Serial device $dev";
-    my $ret = DevIo_OpenDev($hash,0,undef);
-    $owx_hwdevice = $hash->{USBDev};
-    if(!defined($owx_hwdevice)){
-      Log 1, $msg." not defined";
-      return "OWX: Can't open serial device $dev: $!"
-    } else {
-      Log 1,$msg." defined";
-    }
-    $owx_hwdevice->reset_error();
-    $owx_hwdevice->baudrate(9600);
-    $owx_hwdevice->databits(8);
-    $owx_hwdevice->parity('none');
-    $owx_hwdevice->stopbits(1);
-    $owx_hwdevice->handshake('none');
-    $owx_hwdevice->write_settings;
-    #-- store with OWX device
-    $hash->{INTERFACE} = "serial";
-    $hash->{HWDEVICE}   = $owx_hwdevice;
+    my $owx = OWX_SER->new($hash);
+    $hash->{OWX} = $owx;
+    $owx->Define($dev);
   #-- First step: check if we have a COC/CUNO interface attached  
   # TODO NEED TO IMPROVE THIS  
   }elsif( $dev =~ /CUNO/ ){
     require "$attr{global}{modpath}/FHEM/11_OWX_CCC.pm";
-    $hash->{DeviceName} = $dev;
-    #-- Second step in case of CUNO: See if we can open it
-    my $msg = "OWX: COC/CUNO device $dev";
-    #-- hash des COC/CUNO
-    $owx_hwdevice = $main::defs{$dev};
-    if($owx_hwdevice){
-      Log 1,$msg." defined";
-      #-- store with OWX device
-      $hash->{INTERFACE} = "COC/CUNO";
-      $hash->{HWDEVICE}    = $owx_hwdevice;
-      #-- loop for some time until the state is "Initialized"
-      for(my $i=0;$i<6;$i++){
-        last if( $owx_hwdevice->{STATE} eq "Initialized");
-        Log 1,"OWX: Waiting, at t=$i ".$dev." is still ".$owx_hwdevice->{STATE};
-        select(undef,undef,undef,3); 
-      }
-      Log 1, "OWX: Can't open ".$dev if( $owx_hwdevice->{STATE} ne "Initialized");
-      #-- reset the 1-Wire system in COC/CUNO
-      CUL_SimpleWrite($owx_hwdevice, "Oi");
-    }else{
-      Log 1, $msg." not defined";
-      return $msg." not defined";
-    } 
+    my $owx = OWX_CCC->new($hash);
+    $hash->{OWX} = $owx;
+    my $ret = $owx->Define($def);
+    return $ret if ($ret);
   #-- check if we are connecting to Arduino (via FRM):
   } elsif ($dev =~ /^\d{1,2}$/) {
   	$hash->{INTERFACE} = "firmata";
   	if (defined $main::modules{FRM}) {
-    	FRM_Client_Define($hash,$def);
+  		my $owx = OWX_FRM->new($hash);
+  		$hash->{OWX} = $owx;
+  		$owx->Define($def);
   	} else {
   		Log 1,"module FRM not yet loaded, please define an FRM device first.";
   	}
- 
   }
+  
   #-- Third step: see, if a bus interface is detected
   if (!OWX_Detect($hash)){
     $hash->{PRESENT} = 0;

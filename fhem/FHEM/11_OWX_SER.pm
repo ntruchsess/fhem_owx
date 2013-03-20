@@ -30,13 +30,65 @@
 #
 ########################################################################################
 
-sub OWX_SER_Alarms ($) {
-  my ($hash) = @_;
+package OWX_SER;
+
+#-- some globals needed for the 1-Wire module
+#-- baud rate serial interface
+my $owx_baud=9600;
+#-- 16 byte search string
+my @owx_search=(0,0,0,0 ,0,0,0,0, 0,0,0,0, 0,0,0,0);
+#-- search state for 1-Wire bus search
+my $owx_LastDiscrepancy = 0;
+my $owx_LastFamilyDiscrepancy = 0;
+my $owx_LastDeviceFlag = 0;
+
+sub new($$) {
+	my ($class,$hash) = @_;
+	
+	return bless {
+		hash => $hash,
+	}, $class;
+}
+
+sub Define ($) {
+	my ($self,$dev) = @_;
+	my $hash = $self->{hash};
+    #-- when the specified device name contains @<digits> already, use it as supplied
+    if ( $dev !~ m/\@\d*/ ){
+      $hash->{DeviceName} = $dev."\@9600";
+    }
+    #-- Second step in case of serial device: open the serial device to test it
+    my $msg = "OWX: Serial device $dev";
+    my $ret = DevIo_OpenDev($hash,0,undef);
+    $owx_hwdevice = $hash->{USBDev};
+    if(!defined($owx_hwdevice)){
+      main::Log(1, $msg." not defined");
+      return "OWX: Can't open serial device $dev: $!"
+    } else {
+      main::Log(1,$msg." defined");
+    }
+    $owx_hwdevice->reset_error();
+    $owx_hwdevice->baudrate(9600);
+    $owx_hwdevice->databits(8);
+    $owx_hwdevice->parity('none');
+    $owx_hwdevice->stopbits(1);
+    $owx_hwdevice->handshake('none');
+    $owx_hwdevice->write_settings;
+    #-- store with OWX device
+    $hash->{INTERFACE} = "serial";
+    $hash->{HWDEVICE}   = $owx_hwdevice;
+    return undef;
+}
+
+sub Alarms () {
+  my ($self) = @_;
+  
+  my $hash = $self->{hash};
   
   #-- Discover all alarmed devices on the 1-Wire bus
-  my $res = OWX_SER_First($hash,"alarm");
+  my $res = $self->First("alarm");
   while( $owx_LastDeviceFlag==0 && $res != 0){
-    $res = $res & OWX_SER_Next($hash,"alarm");
+    $res = $res & $self->Next("alarm");
   }
   Log 1, " Alarms = ".join(' ',@{$hash->{ALARMDEVS}});
   return( int(@{$hash->{ALARMDEVS}}) );
@@ -56,8 +108,10 @@ sub OWX_SER_Alarms ($) {
 #
 ########################################################################################
 
-sub OWX_SER_Complex ($$$$) {
-  my ($hash,$owx_dev,$data,$numread) =@_;
+sub Complex ($$$) {
+  my ($self,$owx_dev,$data,$numread) =@_;
+  
+  my $hash = $self->{hash};
   
   my $select;
   my $res  = "";
@@ -134,13 +188,14 @@ sub OWX_SER_Complex ($$$$) {
 #
 ########################################################################################
 
-sub OWX_SER_Discover ($) {
-  my ($hash) = @_;
+sub Discover () {
+  my ($self) = @_;
+  my $hash = $self->{hash};
   
   #-- Discover all alarmed devices on the 1-Wire bus
-  my $res = OWX_SER_First($hash,"discover");
+  my $res = $self->First("discover");
   while( $owx_LastDeviceFlag==0 && $res!=0 ){
-    $res = $res & OWX_SER_Next($hash,"discover"); 
+    $res = $res & $self->Next("discover"); 
   }
   return( @{$hash->{DEVS}} == 0);
 } 
@@ -156,8 +211,8 @@ sub OWX_SER_Discover ($) {
 #
 ########################################################################################
 
-sub OWX_SER_First ($$) {
-  my ($hash,$mode) = @_;
+sub First ($) {
+  my ($self,$mode) = @_;
   
   #-- clear 16 byte of search data
   @owx_search=(0,0,0,0 ,0,0,0,0, 0,0,0,0, 0,0,0,0);
@@ -166,7 +221,7 @@ sub OWX_SER_First ($$) {
   $owx_LastDeviceFlag = 0;
   $owx_LastFamilyDiscrepancy = 0;
   #-- now do the search
-  return OWX_SER_Search($hash,$mode);
+  return $self->Search($mode);
 }
 
 ########################################################################################
@@ -181,10 +236,11 @@ sub OWX_SER_First ($$) {
 #
 ########################################################################################
 
-sub OWX_SER_Next ($$) {
-  my ($hash,$mode) = @_;
+sub Next ($) {
+  my ($self,$mode) = @_;
+  
   #-- now do the search
-  return OWX_SER_Search($hash,$mode);
+  return $self->Search($mode);
 }
 
 ########################################################################################
@@ -198,8 +254,9 @@ sub OWX_SER_Next ($$) {
 #
 ########################################################################################
 
-sub OWX_SER_Reset ($) {
-  my ($hash)=@_;
+sub Reset () {
+  my ($self)=@_;
+  my $hash = $self->{hash};
   
   #-- get the interface
   my $owx_interface = $hash->{INTERFACE};
@@ -226,8 +283,9 @@ sub OWX_SER_Reset ($) {
 #
 ########################################################################################
 
-sub OWX_SER_Search ($$) {
-  my ($hash,$mode)=@_;
+sub Search ($) {
+  my ($self,$mode)=@_;
+  my $hash = $self->{hash};
   
   my @owx_fams=();
   
@@ -240,7 +298,7 @@ sub OWX_SER_Search ($$) {
     return 0;
   }
   #-- 1-Wire reset
-  if (OWX_SER_Reset($hash)==0){
+  if ($self->Reset()==0){
     #-- reset the search
     Log 1, "OWX: Search reset failed";
     $owx_LastDiscrepancy = 0;
@@ -339,8 +397,10 @@ sub OWX_SER_Search ($$) {
 #
 ########################################################################################
 
-sub OWX_SER_Verify ($$) {
-  my ($hash,$dev) = @_;
+sub Verify ($) {
+  my ($self,$dev) = @_;
+  my $hash = $self->{hash};
+  
   my $i;
     
   #-- from search string to byte id
@@ -353,7 +413,7 @@ sub OWX_SER_Verify ($$) {
   $owx_LastDiscrepancy = 64;
   $owx_LastDeviceFlag = 0;
   #-- now do the search
-  my $res=OWX_SER_Search($hash,"verify");
+  my $res=$self->Search("verify");
   my $dev2=sprintf("%02X.%02X%02X%02X%02X%02X%02X.%02X",@owx_ROM_ID);
   #-- reset the search state
   $owx_LastDiscrepancy = 0;
