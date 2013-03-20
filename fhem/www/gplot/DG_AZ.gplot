@@ -1,0 +1,38 @@
+#####################################################################
+#
+#  Plotfile Dachgeschoss Arbeitszimmer
+#
+#  Peter A. Henning
+#
+#####################################################################
+
+set terminal png transparent size <SIZE> crop
+set output '<OUT>.png'
+set xdata time
+set timefmt "%Y-%m-%d_%H:%M:%S"
+set xlabel " "
+set ytics nomirror
+set y2tics
+#set ytics
+set title '<L1>'
+set grid xtics y2tics
+
+set y2label "T [°C]"
+set ylabel "R [%]"
+
+
+set yrange [0:90]
+set y2range [10:35]
+set y3range [10:35]
+
+
+#FileLog 4:measured-temp:0:
+#FileLog 4:actuator.*[0-9]+%:0:int
+#FileLog 4:OWT:0:
+
+plot \
+  "< egrep 'measured-temp' <IN>" using 1:2 axes x1y2 title 'T FHT [°C]' with lines,\
+  "< egrep 'actuator' <IN>" using 1:2 axes x1y1 title 'Regler [%]' with lines,\
+  "< egrep 'OWT' <IN>" using 1:2 axes x1y3 title 'T OWT [°C]' with lines,
+          
+     

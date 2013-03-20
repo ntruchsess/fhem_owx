@@ -1,0 +1,43 @@
+#####################################################################
+#
+#  Plotfile Aussenbereich
+#
+#  Peter A. Henning
+#
+#####################################################################
+
+set terminal png transparent truecolor rounded medium size <SIZE> enhanced
+
+set output '<OUT>.png'
+set xdata time
+set timefmt "%Y-%m-%d_%H:%M:%S"
+set xlabel " "
+set ytics nomirror
+set y2tics
+#set ytics
+set title '<L1>'
+set grid xtics y2tics
+
+set ylabel "Hum [%]"
+set y2label "T [°C]"
+
+set yrange [20:90]
+set y2range [-15:35]
+set y3range [-15:35]
+set y4range [-15:35]
+set y5range [20:90]
+
+#FileLog 7:PlantHum:0:
+#FileLog 4:PlantHum:0:
+#FileLog 4:A.OWT1:0:
+#FileLog 4:A.WS:0:
+#FileLog 6:A.WS:0:
+
+plot \
+  "< egrep 'PlantHum' <IN>" using 1:2 ls l0 axes x1y2 title 'T A.OWM [°C]' with lines,\
+  "< egrep 'PlantHum' <IN>" using 1:2 ls l7 axes x1y1 title 'PlantHum' with lines,\
+  "< egrep 'A.OWT1' <IN>" using 1:2 ls l2 axes x1y3 title 'T A.OWT1 [°C]' with lines,\
+  "< egrep 'A.WS' <IN>" using 1:2 ls l4 axes x1y4 title 'T A.WS [°C]' with lines, \
+
+  "< egrep 'A.Ws' <IN>" using 1:2 ls l6 axes x1y5 title 'Hum' with lines
+

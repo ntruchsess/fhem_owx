@@ -1,0 +1,56 @@
+        <a name="MODUL"></a>
+        <h3>MODUL</h3>
+        <p>Kurze Beschreibung </p>
+        <h4>Example</h4>
+        <p>
+            <code>define </code>
+            <br />
+            <code>attr </code>
+            <br />
+        </p>
+        <br />
+        <a name="MODULdefine"></a>
+        <h4>Define</h4>
+        <code>define &lt;name&gt; MODUL [&lt;model&gt;] &lt;id&gt; </code>
+        <p>
+            <code>[&lt;model&gt;]</code><br /> Kurze Beschreibung </p>
+        <ul>
+            <li>model xxx (default if the model parameter is omitted)</li>
+            <li>model yyy</li>
+            <li>model zzz</li>
+        </ul>
+        <p>
+            <code>&lt;id&gt;</code>
+            <br />Beschreibung </p>
+        <p>
+            <code>&lt;interval&gt;</code>
+            <br /> Beschreibung </p>
+        <br />
+        <br />
+        <a name="MODULset"></a>
+        <h4>Set</h4>
+        <ul>
+            <li><a name="modul_setter">
+                    <code>set &lt;name&gt; interval &lt;int&gt;</code></a><br /> Beschreibung</li>
+
+        </ul>
+        <br />
+        <a name="MODULget"></a>
+        <h4>Get</h4>
+        <ul>
+            <li><a name="modul_getter">
+                    <code>get &lt;name&gt; id</code></a>
+                <br /> Beschreibung </li>
+        </ul>
+        <br />
+        <a name="MODULattr"></a>
+        <h4>Attributes</h4>
+        <ul>
+            <li><a name="modul_attribut"><code>attr &lt;name&gt; stateAL &lt;string&gt;</code>
+                </a> Beschreibung </li>
+            <li>Standard attributes <a href="#alias">alias</a>, <a href="#comment">comment</a>, <a
+                    href="#event-on-update-reading">event-on-update-reading</a>, <a
+                    href="#event-on-change-reading">event-on-change-reading</a>, <a href="#room"
+                    >room</a>, <a href="#eventMap">eventMap</a>, <a href="#loglevel">loglevel</a>,
+                    <a href="#webCmd">webCmd</a></li>
+        </ul>

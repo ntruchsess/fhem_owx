@@ -1,0 +1,57 @@
+Index: 92_FileLog.pm
+===================================================================
+--- 92_FileLog.pm	(revision 163)
++++ 92_FileLog.pm	(working copy)
+@@ -225,6 +225,23 @@
+       $h{fh} = new IO::File "> $fname[$i]";
+     }
+     $h{re} = $fld[1];                                   # Filter: regexp
++     #--PAH: Replace some parameters in the REGEXP by actual data
++    # TODAY => current date 
++    my ($sec,$min,$hour,$dayn,$mon,$year,$wday,$yday,$isdst) = localtime(time);
++    my $yearn = $year + 1900;
++    my $monn  = $mon + 1;
++    my $today = sprintf("%4d-%02d-%02d",$yearn,$monn,$dayn);
++    $h{re} =~ s/TODAY/$today/;
++    # DEV devname varname END => some value in the associative array of some device 
++    my $vtemp = defined($fld[1]) ? $fld[1] : "";
++    my $sdev="";
++    my $sval="";
++    ($sdev,$sval) = $vtemp =~ m/.*DEV,(.*),(.*),END.*/;
++    if( $sdev ){
++       $vtemp=defined($main::defs{$sdev}{$sval}) ? $main::defs{$sdev}{$sval} : "";
++       $h{re} =~ s/DEV.*END/$vtemp/gse;
++    }
++    
+     $h{df} = defined($fld[2]) ? $fld[2] : "";           # default value
+     $h{fn} = $fld[3];                                   # function
+     $h{didx} = 10 if($fld[3] && $fld[3] eq "delta-d");  # delta idx, substr len
+@@ -233,6 +250,10 @@
+     if($fld[0] =~ m/"(.*)"/o) {
+       $h{col} = $1;
+       $h{type} = 0;
++    #--PAH: new field type: two digits separated by comma
++    } elsif ($fld[0] =~ m/\d,\d/o ) {
++      $h{col} = $fld[0];
++      $h{type} = 5;
+     } else {
+       $h{col} = $fld[0]-1;
+       $h{type} = 1;
+@@ -320,8 +341,17 @@
+ 
+       } elsif($t == 3) {                    # int function
+         $val = $1 if($fld[$col] =~ m/^(\d+).*/o);
++        
++      #-- PAH
++      # read two columns, the first must contain a time value
++      # which replaces the time when the enry was written
++      } elsif($t == 5) {                   
++        my @cols=split(",",$col);
++        $dte = $fld[$cols[0]-1] if (defined($cols[0]-1));
++        $val = $fld[$cols[1]-1] if (defined($cols[1]-1));
+ 
+       } else {                              # evaluate
++
+         $val = eval($h->{fn});
+ 
+       }

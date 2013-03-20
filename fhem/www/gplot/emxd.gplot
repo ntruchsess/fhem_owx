@@ -1,0 +1,50 @@
+############################
+# Display the power reported by the EM1010
+# Corresponding FileLog definition:
+# define <filelogname> FileLog /var/log/fhem/em-%Y.log <emdevname>:CNT:.*
+
+set terminal png transparent size <SIZE> crop
+set output '<OUT>.png'
+set xdata time
+set timefmt "%Y-%m-%d_%H:%M:%S"
+set xlabel " "
+
+set title '<L1>'
+set grid
+
+set ytics 
+set y2tics nomirror
+
+set ylabel "P [kW]"
+set y2label "Wd [kWh]"
+
+set yrange [0:4.5]
+set y2range [0:33]
+set y3range [0:4.5]
+set y4range [0:33]
+set y5range [0:4.5]
+set y6range [0:33]
+set y7range [0:6]
+
+## These are passed to the FileLog module to sort out data
+## column_spec is <col>:<regexp>:<default>:<fn>
+## <col> may be written as <col1>,<col2>, then the first column is interpreted as the time value
+## The following functions are implemented:
+## - int (to cut off % from a number, as for the actuator)
+## - delta-h / delta-d to get rain/h and rain/d values from continuous data.
+#
+#FileLog 7:E.Verb:0:
+#FileLog 4:E.Verb:0:
+#FileLog 12:E.Verb:0:
+#FileLog 7:E.Prod:0:
+#FileLog 4:E.Prod:0:
+#FileLog 9:nt5000:0:
+#FileLog 12:nt5000:0:
+
+plot "<IN>" using 1:8 axes x1y1 title 'P (Verbrauch)' with lines,\
+     "<IN>" using 1:6 axes x1y2 title 'Wd (Verbrauch)' with lines,\
+     "<IN>" using 1:12 axes x1y7 title 'Cost (Verbrauch)' with lines,\
+     "<IN>" using 1:8 axes x1y3 title 'P (Produktion)' with lines,\
+     "<IN>" using 1:6 axes x1y4 title 'Wd (Produktion)' with lines,\
+     "<IN>" using 1:9 axes x1y5 title 'P (nt5000)' with lines,\
+     "<IN>" using 1:12 axes x1y6 title 'Wd (nt5000)' with lines

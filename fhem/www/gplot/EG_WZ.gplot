@@ -1,0 +1,41 @@
+#####################################################################
+#
+#  Plotfile Erdgeschoss Wohnzimmer
+#
+#  Peter A. Henning
+#
+#####################################################################
+
+set terminal png transparent size <SIZE> crop
+set output '<OUT>.png'
+set xdata time
+set timefmt "%Y-%m-%d_%H:%M:%S"
+set xlabel " "
+set ytics nomirror
+set y2tics
+#set ytics
+set title '<L1>'
+set grid xtics y2tics
+
+set y2label "T [°C]"
+set ylabel "R/rH [%]"
+
+
+set yrange [0:90]
+set y2range [10:35]
+set y3range [10:35]
+set y4range [0:90]
+
+
+#FileLog 4:measured-temp:0:
+#FileLog 4:actuator.*[0-9]+%:0:int
+#FileLog 7:relH:0:
+#FileLog 4:relH:0:
+
+plot \
+  "< egrep 'measured-temp' <IN>" using 1:2 axes x1y2 ls l0 title 'T FHT [°C]' with lines,\
+  "< egrep 'actuator' <IN>" using 1:2 axes x1y1 ls l1 title 'Regler [%]' with lines,\
+  "< egrep 'OWT' <IN>" using 1:2 axes x1y3 ls l2 title 'T OWT [°C]' with lines,\
+  "< egrep 'OWM' <IN>" using 1:2 axes x1y4 ls l7 title 'rHum OWM [%]' with lines
+          
+     

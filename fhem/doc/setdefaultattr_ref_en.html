@@ -1,0 +1,27 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+    <head>
+        <title>setdefaultattr</title>
+    </head>
+    <body>
+        <h3>setdefaultattr</h3>
+        <ul>
+            <code>setdefaultattr [&lt;attrname&gt; [&lt;value&gt;]] </code><br />
+            <br />Add a default attribute. Each device defined from now on will receive this
+            attribute.<br /> If no attrname is specified, then the default attribute list will be
+            deleted. <br /><br /> Example to set the attribute "room kitchen" and "loglevel 4" to
+            each of the lamps: <ul>
+                <code>setdefaultattr room kitchen</code><br />
+                <code>setdefaultattr loglevel 4</code><br />
+                <code>define lamp1 FS20 1234 11</code><br />
+                <code>define lamp2 FS20 1234 12</code><br />
+                <code>define lamp3 FS20 1234 13</code><br />
+                <code>setdefaultattr</code><br />
+            </ul>
+            <br /> Notes:<br />
+            <ul>
+                <li>There is no way to delete a single default-attribute from the list</li>
+            </ul>
+        </ul>
+    </body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html SYSTEM "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <head>
+        <title>OWID</title>
+    </head>
+    <body>
+        <a name="OWID"></a>
+        <h3>OWID</h3>
+        <p>FHEM module for 1-Wire devices that know only their unique ROM ID<br />
+            <br />Note:<br /> This 1-Wire module so far works only with the OWX interface module.
+            Please define an <a href="#OWX">OWX</a> device first. <br /></p>
+        <br /><h4>Example</h4><br />
+        <p>
+            <code>define ROM1 OWX_ID OWCOUNT CE780F000000</code>
+            <br />
+        </p><br />
+        <a name="OWIDdefine"></a>
+        <h4>Define</h4>
+        <p>
+            <code>define &lt;name&gt; OWID &lt;id&gt; </code>
+            <br /><br /> Define a 1-Wire device.<br /><br />
+        </p>
+        <ul>
+            <li>
+                <code>&lt;id&gt;</code>
+                <br />12-character unique ROM id of the converter device without family id and CRC
+                code </li>
+        </ul>
+        <br />
+        <a name="OWIDget"></a>
+        <h4>Get</h4>
+        <ul>
+            <li><a name="owid_id">
+                    <code>get &lt;name&gt; id</code></a>
+                <br /> Returns the full 1-Wire device id OW_FAMILY.ROM_ID.CRC </li>
+            <li><a name="owid_present">
+                    <code>get &lt;name&gt; present</code>
+                </a>
+                <br /> Returns 1 if this 1-Wire device is present, otherwise 0. </li>
+        </ul>
+    </body>
+</html>

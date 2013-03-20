@@ -1,0 +1,88 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+    <head>
+        <title>fhem reference</title>
+        <link rel="stylesheet" type="text/css" href="style.css" />
+        <meta http-equiv="Content-type" content="text/html;charset=ISO-8859-1" />
+        <script type="text/javascript">
+            
+            // Here list of files for fhem commands
+            fhemList = new Array(
+            "help",
+            "attr",
+            "setdefaultattr"
+            );
+            // Here list of files for Devices
+            devList = new Array(
+            "OWX",
+            "OWAD",
+            "OWCOUNT"
+            );
+             // Here list of files for Helper modules
+            helpList = new Array(
+            );
+                
+            function addModules(lang){
+               addModulesFromList(lang,fhemList,"fhemhead","everybody");
+               addModulesFromList(lang,devList,"devhead","everybody");
+               addModulesFromList(lang,helpList,"helphead","everybody");
+            }
+            
+            function addModulesFromList(lang,refList,refHead,refBody){
+               var refFile;
+               var navigat = document.getElementById(refHead);
+               var content = document.getElementById(refBody);
+               for (var i = 0; i < refList.length; ++i)
+               {
+                 refFile = refList[i] + "_ref_" + lang + ".html";
+                 navigat.innerHTML+="<a href=\"#" + refList[i] + "\">" + refList[i] + "</a> <br />";
+                 content.innerHTML+="<a name=\""  + refList[i] + "\"></a><object style=\"display:block;margin:0;overflow:visible\" data=\"" + refFile + "\" width=\"100%\"></object> <br />";
+               };
+            }
+        
+        </script>
+    </head>
+    <body onload="addModules('en')">
+
+        <div id="logo"></div>
+        <div id="menu">
+            <h3>fhem.pl reference</h3>
+            <h3>Contents</h3>
+            <ul>
+                <a href="#intro">Introduction</a>
+                <br />
+                <a href="#command">Fhem command types</a>
+                <br />
+                <a href="#devspec">Device specification</a>
+                <br />
+                <br />
+                <b>fhem commands</b>
+                <ul>
+                    <div id="fhemhead"> </div>
+                </ul>
+                <br />
+                <b>Devices</b>
+                <ul>
+                    <div id="devhead"> </div>
+                </ul>
+                <br />
+                <b>Helper modules</b>
+                <ul>
+                    <div id="helphead"></div>
+                </ul>
+                <br />
+                <a href="#perl">Perl specials</a>
+                <br />
+                <a href="#gnuplot-syntax">gnuplot file syntax</a>
+                <br />
+            </ul>
+        </div>
+        <!-- Introduction -->
+        <a name="intro"></a>
+        <object data="INTRO_en.html" width="100%" type="text/html" style="overflow:visible;border:none">
+            <param height="600"></param>
+        </object>
+        <!-- Content -->
+        <div id="everybody" style="overflow:visible"></div>
+    </body>
+</html>

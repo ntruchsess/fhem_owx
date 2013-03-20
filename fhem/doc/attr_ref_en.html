@@ -1,0 +1,72 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+    <head>
+        <title>attr</title>
+    </head>
+    <body style="overflow:visible">
+        <h3>attr</h3>
+        <ul>
+            <code>attr &lt;devspec&gt; &lt;attrname&gt; [&lt;value&gt;] </code><br />
+            <br />Set an attribute for a device defined by <a href="#define">define</a>. You can
+            define your own attributes too to use them in other applications. Use "attr &lt;name&gt;
+            ?" to get a list of possible attributes. See the <a href="#devspec">Device
+                specification</a> section for details on &lt;devspec&gt;. <br /><br /> Attributes
+            used by all devices: <ul>
+                <a name="comment"></a>
+                <li>comment<br /> Add an arbitrary comment. <a name="room"></a>
+                    <li>room<br /> Filter/group devices. Recognized by web-pgm2 and web-pgm3. A
+                        device can appear in more than one room, in this case the rooms have to be
+                        specified comma-separated.<br /> Devices in the room hidden will not appear
+                        in the web output, or set the <a href="#hiddenroom">hidden</a> FHEMWEB
+                        attribute to selectively disable rooms for certain FHEMWEB instances. </li>
+                    <a name="group"></a>
+                    <li>group<br /> Group devices. Recognized by web-pgm2 (module <a href="#FHEMWEB"
+                            >FHEMWEB</a>), it makes devices in the same group appear in the same
+                        box). This is used to further group devices together. A device can appear in
+                        more than one group, in this case the groups have to be specified
+                        comma-separated.<br /> If this attribute is not set then the device type is
+                        used as the grouping attribute. </li>
+                    <a name="showtime"></a>
+                    <li>showtime<br /> Used in the webfrontend pgm2 to show the time of last
+                        activity instead of the state in the summary view. Useful e.g. for FS20 PIRI
+                        devices. </li>
+                    <br /><br />The following attributes are honored by the modules that make use of
+                    the standardized readings updating mechanism in fhem.pl. Check the modules
+                    Attributes list if you want to know if it is supporting it. <br /><br />
+                    <a name="event-on-update-reading"></a>
+                    <li>event-on-update-reading<br /> If not set, every update of any reading
+                        creates an event, which e.g. is handled by <a href="#notify">notify</a> or
+                            <a href="#FileLog">FileLog</a>. The attribute takes a comma-separated
+                        list of readings. If set, only updates of the listed readings create events. </li>
+                    <a name="event-on-change-reading"></a>
+                    <li>event-on-change-reading<br /> The attribute takes a comma-separated list of
+                        readings. If set, only changes of the listed readings create events. In
+                        other words, if a reading listed here is updated with the new value
+                        identical to the old value, no event is created. </li><br /> The precedence
+                    of event-on-update-reading and event-on-change-reading is as follows: <ol>
+                        <li>If both attributes are not set, any update of any reading of the device
+                            creates an event.</li>
+                        <li>If any of the attributes is set, no events occur for updates or changes
+                            of readings not listed in any of the attributes.</li>
+                        <li>If a reading is listed in event-on-update-reading, an update of the
+                            reading creates an event no matter whether the reading is also listed in
+                            event-on-change-reading.</li>
+                    </ol>
+                </li> </ul>
+            <br /> Device specific attributes are documented in the corresponding device section.
+            <br /> Examples: <ul>
+                <code>attr global verbose 3</code><br />
+                <code>attr lamp room kitchen</code><br />
+                <code>attr lamp group lights</code><br />
+                <code>attr lamp loglevel 6</code><br />
+                <code>attr weatherstation event-on-update-reading wind,temperature,humidity</code><br />
+                <code>attr weatherstation event-on-change-reading israining</code><br />
+            </ul>
+            <br /> Notes:<br />
+            <ul>
+                <li>See <a href="#deleteattr">deleteattr</a> to delete attributes.</li>
+            </ul>
+        </ul>
+
+    </body>
+</html>

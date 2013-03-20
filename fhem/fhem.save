@@ -1,0 +1,46 @@
+#Tue Oct 23 11:42:18 2012
+setstate EMX_1 CNT: 222 Wd: -161.547  Pac: 0.400  Ppeak: 2.328
+setstate EMX_1 2012-08-25 16:00:50 Pac 0.4
+setstate EMX_1 2012-08-25 16:00:50 Pac_cnt 5
+setstate EMX_1 2012-08-25 16:00:50 Ppeak 2.328
+setstate EMX_1 2012-08-25 16:00:50 Ppeak_cnt 582
+setstate EMX_1 2012-08-25 16:00:50 W_Meter 632.933333333337
+setstate EMX_1 2012-08-25 16:00:50 Wd -161.546666666667
+setstate EMX_1 2012-08-25 16:00:50 Wd_cnt 29404
+setstate EMX_1 2012-08-25 15:50:49 Wd_cnt_start 53636
+setstate EMX_1 2012-08-25 16:00:50 seqno 222
+setstate EMX_1 2012-08-25 16:00:50 tsecs 1345903250
+setstate EMX_2 CNT: 220 Wd: 0.000  Pac: 0.000  Ppeak: 0.000
+setstate EMX_2 2012-08-25 15:58:53 Pac 0
+setstate EMX_2 2012-08-25 15:58:53 Pac_cnt 0
+setstate EMX_2 2012-08-25 15:58:53 Ppeak 0
+setstate EMX_2 2012-08-25 15:58:53 Ppeak_cnt 0
+setstate EMX_2 2012-08-25 15:58:53 W_Meter 0
+setstate EMX_2 2012-08-25 15:58:53 Wd 0
+setstate EMX_2 2012-08-25 15:58:53 Wd_cnt 0
+setstate EMX_2 2012-08-25 15:48:52 Wd_cnt_start 0
+setstate EMX_2 2012-08-25 15:58:53 seqno 220
+setstate EMX_2 2012-08-25 15:58:53 tsecs 1345903133
+setstate FileLog_EMX_1 active
+setstate FileLog_EMX_2 active
+setstate Logfile active
+setstate SolarDay initial
+setstate SolarLogD active
+setstate SolarLogM active
+setstate SolarLogY active
+setstate SolarMonth initial
+setstate SolarYear initial
+setstate autocreate active
+setstate global <no definition>
+setstate nt5000 3.836 kW
+setstate nt5000 2012-10-23 11:41:21 Eta 0.00
+setstate nt5000 2012-10-23 11:41:21 Iac 16.68
+setstate nt5000 2012-10-23 11:41:21 Idc 6.48
+setstate nt5000 2012-10-23 11:41:21 Pac 3.836
+setstate nt5000 2012-10-23 11:41:21 Pdc 3.895
+setstate nt5000 2012-10-23 11:41:21 S 96
+setstate nt5000 2012-10-23 11:41:21 Temp 10
+setstate nt5000 2012-10-23 11:41:21 Uac 230.0
+setstate nt5000 2012-10-23 11:41:21 Udc 601.2
+setstate nt5000 2012-10-23 11:41:21 Wd 10.065
+setstate nt5000 2012-10-23 11:41:21 Wtot 1010.0
