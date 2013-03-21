@@ -72,7 +72,7 @@ if( $^O =~ /Win/ ) {
   $owgdevregexp= "/dev/";
 } 
 
-use vars qw{%attr %defs};
+use vars qw{%attr %defs $init_done};
 
 require "$attr{global}{modpath}/FHEM/DevIo.pm";
 
@@ -156,57 +156,30 @@ sub OWX_Define ($$) {
   $hash->{DEVS}        = ();
   $hash->{ALARMDEVS}   = ();
   
+  my $owx;
   #-- First step: check if we have a directly connected serial interface attached
   if ( $dev =~ m|$owgdevregexp|i){  
     require "$attr{global}{modpath}/FHEM/11_OWX_SER.pm";
-    my $owx = OWX_SER->new($hash);
-    $hash->{OWX} = $owx;
-    $owx->Define($dev);
+    $owx = OWX_SER->new($hash);
   #-- First step: check if we have a COC/CUNO interface attached  
   # TODO NEED TO IMPROVE THIS  
   }elsif( $dev =~ /CUNO/ ){
     require "$attr{global}{modpath}/FHEM/11_OWX_CCC.pm";
-    my $owx = OWX_CCC->new($hash);
-    $hash->{OWX} = $owx;
-    my $ret = $owx->Define($def);
-    return $ret if ($ret);
+    $owx = OWX_CCC->new($hash);
   #-- check if we are connecting to Arduino (via FRM):
   } elsif ($dev =~ /^\d{1,2}$/) {
-  	$hash->{INTERFACE} = "firmata";
-  	if (defined $main::modules{FRM}) {
-  		my $owx = OWX_FRM->new($hash);
-  		$hash->{OWX} = $owx;
-  		$owx->Define($def);
-  	} else {
-  		Log 1,"module FRM not yet loaded, please define an FRM device first.";
-  	}
+  	require "$attr{global}{modpath}/FHEM/11_OWX_FRM.pm";
+    $owx = OWX_FRM->new($hash);
   }
-  
-  #-- Third step: see, if a bus interface is detected
-  if (!OWX_Detect($hash)){
-    $hash->{PRESENT} = 0;
-    readingsSingleUpdate($hash,"state","failed",1);
-    $init_done = 1; 
-    return undef;
+
+  if ($owx) {
+  	my $ret = $owx->Define($def);
+  	return $ret if $ret;  
+  	
+  	$hash->{OWX} = $owx;
+  	
+  	return OWX_Init($hash);
   }
-  #-- Fourth step: discovering devices on the bus
-  #   in 10 seconds discover all devices on the 1-Wire bus
-  InternalTimer(gettimeofday()+10, "OWX_Discover", $hash,0);
-  
-  #-- Default settings
-  $hash->{interval}     = 300;          # kick every 5 minutes
-  $hash->{followAlarms} = "off";
-  $hash->{ALARMED}      = "no";
-  
-  #-- InternalTimer blocks if init_done is not true
-  my $oid = $init_done;
-  $hash->{PRESENT} = 1;
-  readingsSingleUpdate($hash,"state","defined",1);
-  $init_done = 1;
-  #-- Intiate first alarm detection and eventually conversion in a minute or so
-  InternalTimer(gettimeofday() + $hash->{interval}, "OWX_Kick", $hash,1);
-  $init_done     = $oid;
-  $hash->{STATE} = "Active";
   return undef;
 }
 
@@ -228,33 +201,23 @@ sub OWX_Alarms ($) {
   
   #-- get the interface
   my $name          = $hash->{NAME};
-  my $owx_interface = $hash->{INTERFACE};
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $owx           = $hash->{OWX};
   my $res;
 
   $hash->{ALARMDEVS}=();
 
-  #-- interface error
-  if( !(defined($owx_interface))){
-    return undef;
-    
-  #-- here we treat the directly connected serial interfaces
-  }elsif( ($owx_interface eq "DS2480") || ($owx_interface eq "DS9097") ){
-    $res = OWX_SER_Alarms($hash);
-    
-  #-- here we treat the CUNO/COC devices
-  }elsif( ($owx_interface eq "COC") || ($owx_interface eq "CUNO")  ){
-    $res = OWX_CCC_Alarms($hash);
-    
-  #-- here we treat Arduino/Firmata devices 
-  }elsif( $owx_interface eq "firmata" ) {
-    $res = FRM_OWX_Alarms($hash);
-    
-  #-- interface error
-  }else{
-    return "OWX: Alarms called with unknown interface $owx_interface on bus $name";
+  if (defined $owx) {
+    $res = $owx->Alarms();
+  } else {
+    #-- interface error
+    my $owx_interface = $hash->{INTERFACE};
+    if( !(defined($owx_interface))){
+      return undef;
+    } else {
+      return "OWX: Alarms called with unknown interface $owx_interface on bus $name";
+    }
   }
-  
+
   if( $res == 0){
     return "OWX: No alarmed 1-Wire devices found on bus $name";
   }
@@ -301,30 +264,20 @@ sub OWX_Complex ($$$$) {
   my $name   = $hash->{NAME};
     
   #-- get the interface
-  my $owx_interface = $hash->{INTERFACE};
-  my $owx_hwdevice  = $hash->{HWDEVICE};
-  
-  #-- interface error
-  if( !(defined($owx_interface))){
-    #Log 3,"OWX: Complex called with undefined interface";
-    return 0;
-    
-  #-- here we treat the directly connected serial interfaces
-  }elsif( ($owx_interface eq "DS2480") || ($owx_interface eq "DS9097") ){
-    return OWX_SER_Complex($hash,$owx_dev,$data,$numread);
-    
-  #-- here we treat the CUNO/COC devices
-  }elsif( ($owx_interface eq "COC") || ($owx_interface eq "CUNO")  ){
-    return OWX_CCC_Complex($hash,$owx_dev,$data,$numread);
+  my $owx = $hash->{OWX};
 
-  #-- here we treat Arduino/Firmata devices 
-  }elsif( $owx_interface eq "firmata" ) {
-    return FRM_OWX_Complex( $hash, $owx_dev, $data, $numread );
-		
-  #-- interface error
-  }else{
-    Log 3,"OWX: Complex called with unknown interface $owx_interface on bus $name";
-    return 0;
+  if (defined $owx) {
+	return $owx->Complex($owx_dev,$data,$numread);
+  } else {
+	#-- interface error
+  	my $owx_interface = $hash->{INTERFACE};
+  	if( !(defined($owx_interface))) {
+      #Log 3,"OWX: Complex called with undefined interface";
+      return 0;
+    } else {
+	  Log 3,"OWX: Complex called with unknown interface $owx_interface on bus $name";
+      return 0;
+    }
   }
 }
 
@@ -481,131 +434,6 @@ sub OWX_CRC16 ($$$) {
 }  
 
 ########################################################################################
-# 
-# OWX_Detect - Detect 1-Wire interface 
-# TODO: HAS TO BE SPLIT INTO INTERFACE DEPENDENT AND INDEPENDENT PART
-#
-# Method rather crude - treated as an 2480, and see whatis returned
-#
-# Parameter hash = hash of bus master
-#
-# Return 1 : OK
-#        0 : not OK
-#
-########################################################################################
-
-sub OWX_Detect ($) {
-  my ($hash) = @_;
-  
-  my ($i,$j,$k,$l,$res,$ret,$ress);
-  my $name = $hash->{NAME};
-  my $ress0 = "OWX: 1-Wire bus $name: interface ";
-  $ress     = $ress0;
-
-  #-- get the interface
-  my $owx_interface = $hash->{INTERFACE};
-  my $owx_hwdevice  = $hash->{HWDEVICE};
-  
-  #-- here we treat the directly connected serial interfaces
-  if($owx_interface eq "serial"){
-    #-- timing byte for DS2480
-    OWX_Query_2480($hash,"\xC1",1);
-  
-    #-- Max 4 tries to detect an interface
-    for($l=0;$l<100;$l++) {
-      #-- write 1-Wire bus (Fig. 2 of Maxim AN192)
-      $res = OWX_Query_2480($hash,"\x17\x45\x5B\x0F\x91",5);
-    
-      #-- process 4/5-byte string for detection
-      if( !defined($res)){
-        $res="";
-        $ret=0;
-      }elsif( ($res eq "\x16\x44\x5A\x00\x90") || ($res eq "\x16\x44\x5A\x00\x93")){
-        $ress .= "master DS2480 detected for the first time";
-        $owx_interface="DS2480";
-        $ret=1;
-      } elsif( $res eq "\x17\x45\x5B\x0F\x91"){
-        $ress .= "master DS2480 re-detected";
-        $owx_interface="DS2480";
-        $ret=1;
-      } elsif( ($res eq "\x17\x0A\x5B\x0F\x02") || ($res eq "\x00\x17\x0A\x5B\x0F\x02") || ($res eq "\x30\xf8\x00") ){
-        $ress .= "passive DS9097 detected";
-        $owx_interface="DS9097";
-        $ret=1;
-      } else {
-        $ret=0;
-      }
-      last 
-        if( $ret==1 );
-      $ress .= "not found, answer was ";
-      for($i=0;$i<length($res);$i++){
-        $j=int(ord(substr($res,$i,1))/16);
-        $k=ord(substr($res,$i,1))%16;
-        $ress.=sprintf "0x%1x%1x ",$j,$k;
-      }
-      Log 1, $ress;
-      $ress = $ress0;
-      #-- sleeping for some time
-      select(undef,undef,undef,0.5);
-    }
-    if( $ret == 0 ){
-      $owx_interface=undef;
-      $ress .= "not detected, answer was ";
-      for($i=0;$i<length($res);$i++){
-        $j=int(ord(substr($res,$i,1))/16);
-        $k=ord(substr($res,$i,1))%16;
-        $ress.=sprintf "0x%1x%1x ",$j,$k;
-      }
-    }
-    #-- nothing to do for Arduino (already done in FRM)
-  } elsif($owx_interface eq "firmata") {
-  	my $iodev = $hash->{IODev};
-	if (defined $iodev and defined $iodev->{FirmataDevice} and defined $iodev->{FD}) {  	
-  	  $ret=1;
-  	  $ress .= "Firmata detected in $iodev->{NAME}";
-	} else {
-	  $ret=0;
-	  $ress .= defined $iodev ? "$iodev->{NAME} is not connected to Firmata" : "not associated to any FRM device";
-	}
-    #-- here we treat the COC/CUNO
-  } else {
-    select(undef,undef,undef,2);
-    #-- type of interface
-    CUL_SimpleWrite($owx_hwdevice, "V");
-    select(undef,undef,undef,0.01);
-    my ($err,$ob) = OWX_CCC_ReadAnswer($owx_hwdevice);
-    #my $ob = CallFn($owx_hwdevice->{NAME}, "GetFn", $owx_hwdevice, (" ", "raw", "V"));
-    #-- process result for detection
-    if( !defined($ob)){
-      $ob="";
-      $ret=0;
-    #-- COC
-    }elsif( $ob =~ m/.*CSM.*/){
-      $owx_interface="COC";
-      $ress .= "DS2482 / COC detected in $owx_hwdevice->{NAME} with response $ob";
-      $ret=1;
-    #-- CUNO
-    }elsif( $ob =~ m/.*CUNO.*/){
-      $owx_interface="CUNO";
-      $ress .= "DS2482 / CUNO detected in $owx_hwdevice->{NAME} with response $ob";
-      $ret=1;
-    #-- something else
-    } else {
-      $ret=0;
-    }
-    #-- treat the failure cases
-    if( $ret == 0 ){
-      $owx_interface=undef;
-      $ress .= "in $owx_hwdevice->{NAME} could not be addressed, return was $ob";
-    }
-  }
-  #-- store with OWX device
-  $hash->{INTERFACE} = $owx_interface;
-  Log 1, $ress;
-  return $ret; 
-}
-
-########################################################################################
 #
 # OWX_Discover - Discover devices on the 1-Wire bus, 
 #                autocreate devices if not already present
@@ -625,28 +453,22 @@ sub OWX_Discover ($) {
   my $acname;
   
   #-- get the interface
-  my $owx_interface = $hash->{INTERFACE};
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $owx = $hash->{OWX};
   my @owx_names=();
 
   #-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
-  return undef
-    if( !defined($owx_interface) );
-  #-- Directly connected serial interface
-  if(  ($owx_interface eq "DS2480") || ($owx_interface eq "DS9097") ){
-    $res = OWX_SER_Discover($hash);
-  #-- Ask the COC/CUNO
-  }elsif( ($owx_interface eq "COC" ) || ($owx_interface eq "CUNO") ){
-    $res = OWX_CCC_Discover($hash);
-  #-- ask the Arduino
-  }elsif ( $owx_interface eq "firmata") {
-    $res = FRM_OWX_Discover($hash);
-  #-- Something else
+  if (defined $owx) {
+	$res = $owx->Discover();
   } else {
-    Log 1,"OWX: Discover called with unknown interface";
-    return undef;
+  	my $owx_interface = $hash->{INTERFACE};
+    if( !defined($owx_interface) ) {
+      return undef;
+    } else {
+      Log 1,"OWX: Discover called with unknown interface $owx_interface";
+      return undef;
+    } 
   }
-  
+
   #-- Go through all devices found on this bus
   foreach my $owx_dev  (@{$hash->{DEVS}}) {
     #-- ignore those which do not have the proper pattern
@@ -856,23 +678,47 @@ sub OWX_Init ($) {
   my ($hash)=@_;
   
   #-- get the interface
-  my $owx_interface = $hash->{INTERFACE};
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $owx = $hash->{OWX};
   
-   #-- interface error
-  if( !(defined($owx_interface))){
-    #Log 3,"OWX: Init called with undefined interface";
-    return 0;
-  }elsif( ($owx_interface eq "DS2480") || ($owx_interface eq "DS9097") ){
-    return OWX_SER_Init($hash);
-  }elsif( ($owx_interface eq "COC" ) || ( $owx_interface eq "CUNO") ){
-    return OWX_CCC_Init($hash);
-  }elsif( $owx_interface eq "firmata" ) {
-    return FRM_OWX_Init($hash);
-  }else{
-    Log 3,"OWX: Init called with unknown interface $owx_interface";
-    return 0;
+  if (defined $owx) {
+  	  #-- Third step: see, if a bus interface is detected
+  	if (!($owx->Detect())) {
+      $hash->{PRESENT} = 0;
+      readingsSingleUpdate($hash,"state","failed",1);
+      $init_done = 1; 
+      return "OWX_Init failed";
+    }
+  	my $ret = $owx->Init();
+  	return $ret if ($ret);
+  } else {
+    #-- interface error
+  	my $owx_interface = $hash->{INTERFACE};
+	if( !(defined($owx_interface))){
+      return "OWX: Init called with undefined interface";
+	} else {
+      return "OWX: Init called with unknown interface $owx_interface";
+	}
   }
+  
+  #-- Fourth step: discovering devices on the bus
+  #   in 10 seconds discover all devices on the 1-Wire bus
+  InternalTimer(gettimeofday()+10, "OWX_Discover", $hash,0);
+  
+  #-- Default settings
+  $hash->{interval}     = 300;          # kick every 5 minutes
+  $hash->{followAlarms} = "off";
+  $hash->{ALARMED}      = "no";
+  
+  #-- InternalTimer blocks if init_done is not true
+  my $oid = $init_done;
+  $hash->{PRESENT} = 1;
+  readingsSingleUpdate($hash,"state","defined",1);
+  $init_done = 1;
+  #-- Intiate first alarm detection and eventually conversion in a minute or so
+  InternalTimer(gettimeofday() + $hash->{interval}, "OWX_Kick", $hash,1);
+  $init_done     = $oid;
+  $hash->{STATE} = "Active";
+  return undef;
 }
 
 ########################################################################################
@@ -924,21 +770,19 @@ sub OWX_Reset ($) {
   my ($hash)=@_;
   
   #-- get the interface
-  my $owx_interface = $hash->{INTERFACE};
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $owx           = $hash->{OWX};
   
-  #-- interface error
-  if( !(defined($owx_interface))){
-    return 0;
-  }elsif( ($owx_interface eq "DS2480") || ($owx_interface eq "DS9097") ){
-    return OWX_SER_Reset($hash);
-  }elsif( ($owx_interface eq "COC" ) || ( $owx_interface eq "CUNO") ){
-    return OWX_CCC_Reset($hash);
-  }elsif( $owx_interface eq "firmata" ) {
-    return FRM_OWX_Reset($hash);
-  }else{
-    Log 3,"OWX: Reset called with unknown interface $owx_interface";
-    return 0;
+  if (defined $owx) {
+	return $owx->Reset();
+  } else {  	
+    #-- interface error
+    my $owx_interface = $hash->{INTERFACE};
+    if( !(defined($owx_interface))){
+      return 0;
+    } else {
+      Log 3,"OWX: Reset called with unknown interface $owx_interface";
+      return 0;
+    }
   }
 }
 
@@ -1025,22 +869,19 @@ sub OWX_Verify ($$) {
   my $i;
   
   #-- get the interface
-  my $owx_interface = $hash->{INTERFACE};
-  
-  #-- interface error
-  if( !(defined($owx_interface))){
-    return 0;
-  #-- Directly connected interface
-  }elsif(  ($owx_interface eq "DS2480") || ($owx_interface eq "DS9097") ){
-    return OWX_SER_Verify($hash,$dev)
-  #-- Ask the COC/CUNO
-  }elsif( ($owx_interface eq "COC" ) || ($owx_interface eq "CUNO") ){
-    return OWX_CCC_Verify($hash,$dev)
-  }elsif( $owx_interface eq "firmata" ){
-  	return FRM_OWX_Verify($hash,$dev);
+  my $owx           = $hash->{OWX};
+
+  if (defined $owx) {
+  	return $owx->Verify($dev);
   } else {
-    Log 1,"OWX: Verify called with unknown interface";
-    return 0;
+    #-- interface error
+	my $owx_interface = $hash->{INTERFACE};
+    if( !(defined($owx_interface))){
+      return 0;
+    } else {
+      Log 1,"OWX: Verify called with unknown interface $owx_interface";
+      return 0;
+    }
   }
 }
 

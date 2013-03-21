@@ -5,6 +5,7 @@
 # FHEM module providing hardware dependent functions for the serial (USB) interface of OWX
 #
 # Prof. Dr. Peter A. Henning
+# Norbert Truchsess
 #
 # $Id: 11_OWX.pm 3.19 2013-03 - pahenning $
 #
@@ -32,27 +33,41 @@
 
 package OWX_SER;
 
-#-- some globals needed for the 1-Wire module
-#-- baud rate serial interface
-my $owx_baud=9600;
-#-- 16 byte search string
-my @owx_search=(0,0,0,0 ,0,0,0,0, 0,0,0,0, 0,0,0,0);
-#-- search state for 1-Wire bus search
-my $owx_LastDiscrepancy = 0;
-my $owx_LastFamilyDiscrepancy = 0;
-my $owx_LastDeviceFlag = 0;
+use strict;
+use warnings;
 
-sub new($$) {
+use vars qw{$owx_debug};
+
+sub new($) {
 	my ($class,$hash) = @_;
 	
 	return bless {
+		#-- OWX device
 		hash => $hash,
+		#-- baud rate serial interface
+		baud => 9600,
+		#-- 16 byte search string
+		search => [0,0,0,0 ,0,0,0,0, 0,0,0,0, 0,0,0,0],
+		ROM_ID => [0,0,0,0 ,0,0,0,0],
+		#-- search state for 1-Wire bus search
+		LastDiscrepancy => 0,
+		LastFamilyDiscrepancy => 0,
+		LastDeviceFlag => 0,
 	}, $class;
 }
 
 sub Define ($) {
-	my ($self,$dev) = @_;
+	my ($self,$def) = @_;
 	my $hash = $self->{hash};
+	
+	my @a = split("[ \t][ \t]*", $def);
+
+	#-- check syntax
+	if(int(@a) < 3){
+		return "OWX: Syntax error - must be define <name> OWX"
+	}
+	#-- If this line contains 3 parameters, it is the bus master definition
+	my $dev = $a[2];
     #-- when the specified device name contains @<digits> already, use it as supplied
     if ( $dev !~ m/\@\d*/ ){
       $hash->{DeviceName} = $dev."\@9600";
@@ -60,24 +75,93 @@ sub Define ($) {
     #-- Second step in case of serial device: open the serial device to test it
     my $msg = "OWX: Serial device $dev";
     my $ret = DevIo_OpenDev($hash,0,undef);
-    $owx_hwdevice = $hash->{USBDev};
-    if(!defined($owx_hwdevice)){
-      main::Log(1, $msg." not defined");
+    my $hwdevice = $hash->{USBDev};
+    if(!defined($hwdevice)){
+      Log(1, $msg." not defined");
       return "OWX: Can't open serial device $dev: $!"
     } else {
-      main::Log(1,$msg." defined");
+      Log(1,$msg." defined");
     }
-    $owx_hwdevice->reset_error();
-    $owx_hwdevice->baudrate(9600);
-    $owx_hwdevice->databits(8);
-    $owx_hwdevice->parity('none');
-    $owx_hwdevice->stopbits(1);
-    $owx_hwdevice->handshake('none');
-    $owx_hwdevice->write_settings;
+    $hwdevice->reset_error();
+    $hwdevice->baudrate(9600);
+    $hwdevice->databits(8);
+    $hwdevice->parity('none');
+    $hwdevice->stopbits(1);
+    $hwdevice->handshake('none');
+    $hwdevice->write_settings;
     #-- store with OWX device
     $hash->{INTERFACE} = "serial";
-    $hash->{HWDEVICE}   = $owx_hwdevice;
+    $hash->{HWDEVICE}   = $hwdevice;
     return undef;
+}
+
+sub Detect () {
+  my ($self) = @_;
+  my $hash = $self->{hash};
+  
+  my ($i,$j,$k,$l,$res,$ret,$ress);
+  my $name = $hash->{NAME};
+  my $ress0 = "OWX: 1-Wire bus $name: interface ";
+  $ress     = $ress0;
+
+  my $interface;
+  
+  #-- timing byte for DS2480
+  $self->Query_2480("\xC1",1);
+  
+  #-- Max 4 tries to detect an interface
+  for($l=0;$l<100;$l++) {
+    #-- write 1-Wire bus (Fig. 2 of Maxim AN192)
+    $res = $self->Query_2480("\x17\x45\x5B\x0F\x91",5);
+    
+    #-- process 4/5-byte string for detection
+    if( !defined($res)){
+      $res="";
+      $ret=0;
+    }elsif( ($res eq "\x16\x44\x5A\x00\x90") || ($res eq "\x16\x44\x5A\x00\x93")){
+      $ress .= "master DS2480 detected for the first time";
+      $interface="DS2480";
+      $ret=1;
+    } elsif( $res eq "\x17\x45\x5B\x0F\x91"){
+      $ress .= "master DS2480 re-detected";
+      $interface="DS2480";
+      $ret=1;
+    } elsif( ($res eq "\x17\x0A\x5B\x0F\x02") || ($res eq "\x00\x17\x0A\x5B\x0F\x02") || ($res eq "\x30\xf8\x00") ){
+      $ress .= "passive DS9097 detected";
+      $interface="DS9097";
+      $ret=1;
+    } else {
+      $ret=0;
+    }
+    last 
+      if( $ret==1 );
+    $ress .= "not found, answer was ";
+    for($i=0;$i<length($res);$i++){
+      $j=int(ord(substr($res,$i,1))/16);
+      $k=ord(substr($res,$i,1))%16;
+      $ress.=sprintf "0x%1x%1x ",$j,$k;
+    }
+    Log(1, $ress);
+    $ress = $ress0;
+    #-- sleeping for some time
+    select(undef,undef,undef,0.5);
+  }
+  if( $ret == 0 ){
+    $interface=undef;
+    $ress .= "not detected, answer was ";
+    for($i=0;$i<length($res);$i++){
+      $j=int(ord(substr($res,$i,1))/16);
+      $k=ord(substr($res,$i,1))%16;
+      $ress.=sprintf "0x%1x%1x ",$j,$k;
+    }
+  }
+  $hash->{INTERFACE} = $interface;
+  Log(1, $ress);
+  return $ret; 
+}
+
+sub Init() {
+	return undef;
 }
 
 sub Alarms () {
@@ -86,11 +170,11 @@ sub Alarms () {
   my $hash = $self->{hash};
   
   #-- Discover all alarmed devices on the 1-Wire bus
-  my $res = $self->First("alarm");
-  while( $owx_LastDeviceFlag==0 && $res != 0){
-    $res = $res & $self->Next("alarm");
+  my $res = $self->SER_First("alarm");
+  while( $self->{LastDeviceFlag}==0 && $res != 0){
+    $res = $res & $self->SER_Next("alarm");
   }
-  Log 1, " Alarms = ".join(' ',@{$hash->{ALARMDEVS}});
+  Log(1, " Alarms = ".join(' ',@{$hash->{ALARMDEVS}}));
   return( int(@{$hash->{ALARMDEVS}}) );
 } 
 
@@ -109,7 +193,7 @@ sub Alarms () {
 ########################################################################################
 
 sub Complex ($$$) {
-  my ($self,$owx_dev,$data,$numread) =@_;
+  my ($self,$dev,$data,$numread) =@_;
   
   my $hash = $self->{hash};
   
@@ -119,23 +203,23 @@ sub Complex ($$$) {
   my ($i,$j,$k);
   
   #-- get the interface
-  my $owx_interface = $hash->{INTERFACE};
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $interface = $hash->{INTERFACE};
+  my $hwdevice  = $hash->{HWDEVICE};
   
   #-- has match ROM part
-  if( $owx_dev ){
+  if( $dev ){
     #-- ID of the device
-    my $owx_rnf = substr($owx_dev,3,12);
-    my $owx_f   = substr($owx_dev,0,2);
+    my $owx_rnf = substr($dev,3,12);
+    my $owx_f   = substr($dev,0,2);
 
     #-- 8 byte 1-Wire device address
-    my @owx_ROM_ID  =(0,0,0,0 ,0,0,0,0); 
+    my @rom_id  =(0,0,0,0 ,0,0,0,0); 
     #-- from search string to byte id
-    $owx_dev=~s/\.//g;
+    $dev=~s/\.//g;
     for(my $i=0;$i<8;$i++){
-       $owx_ROM_ID[$i]=hex(substr($owx_dev,2*$i,2));
+       $rom_id[$i]=hex(substr($dev,2*$i,2));
     }
-    $select=sprintf("\x55%c%c%c%c%c%c%c%c",@owx_ROM_ID).$data; 
+    $select=sprintf("\x55%c%c%c%c%c%c%c%c",@rom_id).$data; 
   #-- has no match ROM part
   } else {
     $select=$data;
@@ -156,12 +240,12 @@ sub Complex ($$$) {
       $k=ord(substr($select,$i,1))%16;
       $res2.=sprintf "0x%1x%1x ",$j,$k;
     }
-    Log 3, $res2;
+    Log(3, $res2);
   }
-  if( $owx_interface eq "DS2480" ){
-    $res = OWX_Block_2480($hash,$select);
-  }elsif( $owx_interface eq "DS9097" ){
-    $res = OWX_Block_9097($hash,$select);
+  if( $interface eq "DS2480" ){
+    $res = $self->Block_2480($select);
+  }elsif( $interface eq "DS9097" ){
+    $res = $self->Block_9097($select);
   }
   
   #-- for debugging
@@ -172,7 +256,7 @@ sub Complex ($$$) {
       $k=ord(substr($res,$i,1))%16;
       $res2.=sprintf "0x%1x%1x ",$j,$k;
     }
-    Log 3, $res2;
+    Log(3, $res2);
   }
   
   return $res
@@ -193,9 +277,9 @@ sub Discover () {
   my $hash = $self->{hash};
   
   #-- Discover all alarmed devices on the 1-Wire bus
-  my $res = $self->First("discover");
-  while( $owx_LastDeviceFlag==0 && $res!=0 ){
-    $res = $res & $self->Next("discover"); 
+  my $res = $self->SER_First("discover");
+  while( $self->{LastDeviceFlag}==0 && $res!=0 ){
+    $res = $res & $self->SER_Next("discover"); 
   }
   return( @{$hash->{DEVS}} == 0);
 } 
@@ -211,15 +295,15 @@ sub Discover () {
 #
 ########################################################################################
 
-sub First ($) {
+sub SER_First ($) {
   my ($self,$mode) = @_;
   
   #-- clear 16 byte of search data
-  @owx_search=(0,0,0,0 ,0,0,0,0, 0,0,0,0, 0,0,0,0);
+  @{$self->{search}} = (0,0,0,0 ,0,0,0,0, 0,0,0,0, 0,0,0,0);
   #-- reset the search state
-  $owx_LastDiscrepancy = 0;
-  $owx_LastDeviceFlag = 0;
-  $owx_LastFamilyDiscrepancy = 0;
+  $self->{LastDiscrepancy} = 0;
+  $self->{LastDeviceFlag} = 0;
+  $self->{LastFamilyDiscrepancy} = 0;
   #-- now do the search
   return $self->Search($mode);
 }
@@ -236,7 +320,7 @@ sub First ($) {
 #
 ########################################################################################
 
-sub Next ($) {
+sub SER_Next ($) {
   my ($self,$mode) = @_;
   
   #-- now do the search
@@ -259,14 +343,13 @@ sub Reset () {
   my $hash = $self->{hash};
   
   #-- get the interface
-  my $owx_interface = $hash->{INTERFACE};
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $interface = $hash->{INTERFACE};
   
    #-- interface error
-  if(  $owx_interface eq "DS2480"){
-    return OWX_Reset_2480($hash);
-  }elsif(  $owx_interface eq "DS9097"){
-    return OWX_Reset_9097($hash);
+  if(  $interface eq "DS2480"){
+    return $self->Reset_2480();
+  }elsif(  $interface eq "DS9097"){
+    return $self->Reset_9097();
   }
 }
 
@@ -290,57 +373,57 @@ sub Search ($) {
   my @owx_fams=();
   
   #-- get the interface
-  my $owx_interface = $hash->{INTERFACE};
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $interface = $hash->{INTERFACE};
+  my $hwdevice  = $hash->{HWDEVICE};
   
   #-- if the last call was the last one, no search 
-  if ($owx_LastDeviceFlag==1){
+  if ($self->{LastDeviceFlag}==1){
     return 0;
   }
   #-- 1-Wire reset
   if ($self->Reset()==0){
     #-- reset the search
-    Log 1, "OWX: Search reset failed";
-    $owx_LastDiscrepancy = 0;
-    $owx_LastDeviceFlag = 0;
-    $owx_LastFamilyDiscrepancy = 0;
+    Log(1, "OWX: Search reset failed");
+    $self->{LastDiscrepancy} = 0;
+    $self->{LastDeviceFlag} = 0;
+    $self->{LastFamilyDiscrepancy} = 0;
     return 0;
   }
   
   #-- Here we call the device dependent part
-  if( $owx_interface eq "DS2480" ){
-    OWX_Search_2480($hash,$mode);
-  }elsif( $owx_interface eq "DS9097" ){
-    OWX_Search_9097($hash,$mode);
+  if( $interface eq "DS2480" ){
+    $self->Search_2480($mode);
+  }elsif( $interface eq "DS9097" ){
+    $self->Search_9097($mode);
   }else{
-    Log 1,"OWX: Search called with unknown interface ".$owx_interface;
+    Log(1,"OWX: Search called with unknown interface ".$interface);
     return 0;
   }
   #--check if we really found a device
-  if( OWX_CRC(0)!= 0){  
+  if( OWX_CRC(0)!= 0){  # TODO: pass $self->{ROM_ID}
   #-- reset the search
-    Log 1, "OWX: Search CRC failed ";
-    $owx_LastDiscrepancy = 0;
-    $owx_LastDeviceFlag = 0;
-    $owx_LastFamilyDiscrepancy = 0;
+    Log(1, "OWX: Search CRC failed ");
+    $self->{LastDiscrepancy} = 0;
+    $self->{LastDeviceFlag} = 0;
+    $self->{LastFamilyDiscrepancy} = 0;
     return 0;
   }
     
   #-- character version of device ROM_ID, first byte = family 
-  my $dev=sprintf("%02X.%02X%02X%02X%02X%02X%02X.%02X",@owx_ROM_ID);
+  my $dev=sprintf("%02X.%02X%02X%02X%02X%02X%02X.%02X",@{$self->{ROM_ID}});
   
   #-- for some reason this does not work - replaced by another test, see below
-  #if( $owx_LastDiscrepancy==0 ){
-  #    $owx_LastDeviceFlag=1;
+  #if( $self->{LastDiscrepancy}==0 ){
+  #    $self->{LastDeviceFlag}=1;
   #}
   #--
-  if( $owx_LastDiscrepancy==$owx_LastFamilyDiscrepancy ){
-      $owx_LastFamilyDiscrepancy=0;    
+  if( $self->{LastDiscrepancy}==$self->{LastFamilyDiscrepancy} ){
+      $self->{LastFamilyDiscrepancy}=0;    
   }
     
   #-- mode was to verify presence of a device
   if ($mode eq "verify") {
-    Log 5, "OWX: Device verified $dev";
+    Log(5, "OWX: Device verified $dev");
     return 1;
   #-- mode was to discover devices
   } elsif( $mode eq "discover" ){
@@ -357,14 +440,14 @@ sub Search ($) {
     foreach (@{$hash->{DEVS}}){
       if( $dev eq $_ ){        
         #-- if present, set the last device found flag
-        $owx_LastDeviceFlag=1;
+        $self->{LastDeviceFlag}=1;
         last;
       }
     }
-    if( $owx_LastDeviceFlag!=1 ){
+    if( $self->{LastDeviceFlag}!=1 ){
       #-- push to list
       push(@{$hash->{DEVS}},$dev);
-      Log 5, "OWX: New device found $dev";
+      Log(5, "OWX: New device found $dev");
     }  
     return 1;
     
@@ -373,14 +456,14 @@ sub Search ($) {
     for(my $i=0;$i<@{$hash->{ALARMDEVS}};$i++){
       if( $dev eq ${$hash->{ALARMDEVS}}[$i] ){        
         #-- if present, set the last device found flag
-        $owx_LastDeviceFlag=1;
+        $self->{LastDeviceFlag}=1;
         last;
       }
     }
-    if( $owx_LastDeviceFlag!=1 ){
+    if( $self->{LastDeviceFlag}!=1 ){
     #--push to list
       push(@{$hash->{ALARMDEVS}},$dev);
-      Log 5, "OWX: New alarm device found $dev";
+      Log(5, "OWX: New alarm device found $dev");
     }  
     return 1;
   }
@@ -400,24 +483,24 @@ sub Search ($) {
 sub Verify ($) {
   my ($self,$dev) = @_;
   my $hash = $self->{hash};
-  
+  my @rom_id;
   my $i;
     
   #-- from search string to byte id
   my $devs=$dev;
   $devs=~s/\.//g;
   for($i=0;$i<8;$i++){
-     $owx_ROM_ID[$i]=hex(substr($devs,2*$i,2));
+     $rom_id[$i]=hex(substr($devs,2*$i,2));
   }
   #-- reset the search state
-  $owx_LastDiscrepancy = 64;
-  $owx_LastDeviceFlag = 0;
+  $self->{LastDiscrepancy} = 64;
+  $self->{LastDeviceFlag} = 0;
   #-- now do the search
   my $res=$self->Search("verify");
-  my $dev2=sprintf("%02X.%02X%02X%02X%02X%02X%02X.%02X",@owx_ROM_ID);
+  my $dev2=sprintf("%02X.%02X%02X%02X%02X%02X%02X.%02X",@rom_id);
   #-- reset the search state
-  $owx_LastDiscrepancy = 0;
-  $owx_LastDeviceFlag = 0;
+  $self->{LastDiscrepancy} = 0;
+  $self->{LastDeviceFlag} = 0;
   #-- check result
   if ($dev eq $dev2){
     return 1;
@@ -441,8 +524,9 @@ sub Verify ($) {
 #
 ########################################################################################
 
-sub OWX_Block_2480 ($$) {
-  my ($hash,$data) =@_;
+sub Block_2480 ($) {
+  my ($self,$data) =@_;
+  my $hash = $self->{hash};
   
    my $data2="";
    my $retlen = length($data);
@@ -460,7 +544,7 @@ sub OWX_Block_2480 ($$) {
     }
   }
   #-- write 1-Wire bus as a single string
-  my $res =OWX_Query_2480($hash,$data2,$retlen);
+  my $res =$self->Query_2480($data2,$retlen);
   return $res;
 }
 
@@ -475,8 +559,9 @@ sub OWX_Block_2480 ($$) {
 #
 ########################################################################################
 
-sub OWX_Level_2480 ($$) {
-  my ($hash,$newlevel) =@_;
+sub Level_2480 ($) {
+  my ($self,$newlevel) =@_;
+  my $hash = $self->{hash};
   my $cmd="";
   my $retlen=0;
   #-- if necessary, prepend E3 character for command mode
@@ -487,15 +572,15 @@ sub OWX_Level_2480 ($$) {
     $cmd=$cmd."\xF1\xED\xF1";
     $retlen+=3;
     #-- write 1-Wire bus
-    my $res = OWX_Query_2480($hash,$cmd,$retlen);
+    my $res = $self->Query_2480($cmd,$retlen);
     #-- process result
     my $r1  = ord(substr($res,0,1)) & 236;
     my $r2  = ord(substr($res,1,1)) & 236;
     if( ($r1 eq 236) && ($r2 eq 236) ){
-      Log 5, "OWX: Level change to normal OK";
+      Log(5, "OWX: Level change to normal OK");
       return 1;
     } else {
-      Log 3, "OWX: Failed to change to normal level";
+      Log(3, "OWX: Failed to change to normal level");
       return 0;
     }
   #-- start pulse  
@@ -503,13 +588,13 @@ sub OWX_Level_2480 ($$) {
     $cmd=$cmd."\x3F\xED";
     $retlen+=2;
     #-- write 1-Wire bus
-    my $res = OWX_Query_2480($hash,$cmd,$retlen);
+    my $res = $self->Query_2480($cmd,$retlen);
     #-- process result
     if( $res eq "\x3E" ){
-      Log 5, "OWX: Level change OK";
+      Log(5, "OWX: Level change OK");
       return 1;
     } else {
-      Log 3, "OWX: Failed to change level";
+      Log(3, "OWX: Failed to change level");
       return 0;
     }
   }
@@ -525,18 +610,19 @@ sub OWX_Level_2480 ($$) {
 #
 ########################################################################################
 
-sub OWX_Query_2480 ($$$) {
-
-  my ($hash,$cmd,$retlen) = @_;
+sub Query_2480 ($$) {
+	
+  my ($self,$cmd,$retlen) = @_;
+  my $hash = $self->{hash};
   my ($i,$j,$k,$l,$m,$n);
   my $string_in = "";
   my $string_part;
   
   #-- get hardware device
-  my $owx_hwdevice = $hash->{HWDEVICE};
+  my $hwdevice = $hash->{HWDEVICE};
   
-  $owx_hwdevice->baudrate($owx_baud);
-  $owx_hwdevice->write_settings;
+  $hwdevice->baudrate($self->{baud});
+  $hwdevice->write_settings;
 
   if( $owx_debug > 2){
     my $res = "OWX: Sending out        ";
@@ -545,15 +631,15 @@ sub OWX_Query_2480 ($$$) {
       $k=ord(substr($cmd,$i,1))%16;
   	$res.=sprintf "0x%1x%1x ",$j,$k;
     }
-    Log 3, $res;
+    Log(3, $res);
   }
   
-  my $count_out = $owx_hwdevice->write($cmd);
+  my $count_out = $hwdevice->write($cmd);
   
   if( !($count_out)){
-    Log 3,"OWX_Query_2480: No return value after writing" if( $owx_debug > 0);
+    Log(3,"OWX_Query_2480: No return value after writing") if( $owx_debug > 0);
   } else {
-    Log 3, "OWX_Query_2480: Write incomplete $count_out ne ".(length($cmd))."" if ( ($count_out != length($cmd)) & ($owx_debug > 0));
+    Log(3, "OWX_Query_2480: Write incomplete $count_out ne ".(length($cmd))."") if ( ($count_out != length($cmd)) & ($owx_debug > 0));
   }
   #-- sleeping for some time
   select(undef,undef,undef,0.04);
@@ -561,12 +647,12 @@ sub OWX_Query_2480 ($$$) {
   #-- read the data - looping for slow devices suggested by Joachim Herold
   $n=0;                                                
   for($l=0;$l<$retlen;$l+=$m) {                            
-    my ($count_in, $string_part) = $owx_hwdevice->read(48);  
+    my ($count_in, $string_part) = $hwdevice->read(48);  
     $string_in .= $string_part;                            
     $m = $count_in;		
   	$n++;
  	if( $owx_debug > 2){
- 	  Log 3, "Schleifendurchlauf $n";
+ 	  Log(3, "Schleifendurchlauf $n");
  	  }
  	if ($n > 100) {                                       
 	  $m = $retlen;                                         
@@ -579,7 +665,7 @@ sub OWX_Query_2480 ($$$) {
         $k=ord(substr($string_part,$i,1))%16;
         $res.=sprintf "0x%1x%1x ",$j,$k;
 	  }
-      Log 3, $res
+      Log(3, $res)
         if( $count_in > 0);
 	}
   }
@@ -600,9 +686,10 @@ sub OWX_Query_2480 ($$$) {
 #
 ########################################################################################
 
-sub OWX_Reset_2480 ($) {
+sub Reset_2480 () {
 
-  my ($hash)=@_;
+  my ($self)=@_;
+  my $hash = $self->{hash};
   my $cmd="";
   my $name     = $hash->{NAME};
  
@@ -613,19 +700,19 @@ sub OWX_Reset_2480 ($) {
   #-- Reset command \xC5
   $cmd  = $cmd."\xC5"; 
   #-- write 1-Wire bus
-  $res =OWX_Query_2480($hash,$cmd,1);
+  $res = $self->Query_2480($cmd,1);
 
   #-- if not ok, try for max. a second time
   $r1  = ord(substr($res,0,1)) & 192;
   if( $r1 != 192){
-    #Log 1, "Trying second reset";
-    $res =OWX_Query_2480($hash,$cmd,1);
+    #Log(1, "Trying second reset";
+    $res = $self->Query_2480($cmd,1);
   }
 
   #-- process result
   $r1  = ord(substr($res,0,1)) & 192;
   if( $r1 != 192){
-    Log 3, "OWX: Reset failure on bus $name";
+    Log(3, "OWX: Reset failure on bus $name");
     return 0;
   }
   $hash->{ALARMED} = "no";
@@ -633,10 +720,10 @@ sub OWX_Reset_2480 ($) {
   $r2 = ord(substr($res,0,1)) & 3;
   
   if( $r2 == 3 ){
-    #Log 3, "OWX: No presence detected";
+    #Log(3, "OWX: No presence detected";
     return 1;
   }elsif( $r2 ==2 ){
-    Log 1, "OWX: Alarm presence detected on bus $name";
+    Log(1, "OWX: Alarm presence detected on bus $name");
     $hash->{ALARMED} = "yes";
   }
   return 1;
@@ -655,8 +742,9 @@ sub OWX_Reset_2480 ($) {
 #
 ########################################################################################
 
-sub OWX_Search_2480 ($$) {
-  my ($hash,$mode)=@_;
+sub Search_2480 ($) {
+  my ($self,$mode)=@_;
+  my $hash = $self->{hash};
   
   my ($sp1,$sp2,$response,$search_direction,$id_bit_number);
     
@@ -666,7 +754,7 @@ sub OWX_Search_2480 ($$) {
   select(undef,undef,undef,0.5);
   
   #-- clear 16 byte of search data
-  @owx_search=(0,0,0,0 ,0,0,0,0, 0,0,0,0, 0,0,0,0);
+  @{$self->{search}}=(0,0,0,0 ,0,0,0,0, 0,0,0,0, 0,0,0,0);
   #-- Output search data construction (Fig. 9 of Maxim AN192)
   #   operates on a 16 byte search response = 64 pairs of two bits
   while ( $id_bit_number <= 64) {
@@ -677,16 +765,16 @@ sub OWX_Search_2480 ($$) {
     my $newcpos2 = int(($id_bit_number-1)/8);
     my $newimsk2 = ($id_bit_number-1)%8;
 
-    if( $id_bit_number <= $owx_LastDiscrepancy){
+    if( $id_bit_number <= $self->{LastDiscrepancy}){
       #-- first use the ROM ID bit to set the search direction  
-      if( $id_bit_number < $owx_LastDiscrepancy ) {
-        $search_direction = ($owx_ROM_ID[$newcpos2]>>$newimsk2) & 1;
+      if( $id_bit_number < $self->{LastDiscrepancy} ) {
+        $search_direction = ($self->{ROM_ID}[$newcpos2]>>$newimsk2) & 1;
         #-- at the last discrepancy search into 1 direction anyhow
       } else {
         $search_direction = 1;
       } 
       #-- fill into search data;
-      $owx_search[$newcpos]+=$search_direction<<(2*$newimsk+1);
+      $self->{search}[$newcpos]+=$search_direction<<(2*$newimsk+1);
     }
     #--increment number
     $id_bit_number++;
@@ -699,20 +787,20 @@ sub OWX_Search_2480 ($$) {
     $sp1 = "\xE1\xEC\xE3\xB5";
   }
   #-- issue data mode \xE1, device ID, command mode \xE3 / end accelerator \xA5
-  $sp2=sprintf("\xE1%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c\xE3\xA5",@owx_search); 
-  $response = OWX_Query_2480($hash,$sp1,1); 
-  $response = OWX_Query_2480($hash,$sp2,16);   
+  $sp2=sprintf("\xE1%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c\xE3\xA5",@{$self->{search}}); 
+  $response = $self->Query_2480($sp1,1); 
+  $response = $self->Query_2480($sp2,16);   
      
   #-- interpret the return data
   if( length($response)!=16 ) {
-    Log 3, "OWX: Search 2nd return has wrong parameter with length = ".length($response)."";
+    Log(3, "OWX: Search 2nd return has wrong parameter with length = ".length($response)."");
     return 0;
   }
   #-- Response search data parsing (Fig. 11 of Maxim AN192)
   #   operates on a 16 byte search response = 64 pairs of two bits
   $id_bit_number = 1;
   #-- clear 8 byte of device id for current search
-  @owx_ROM_ID =(0,0,0,0 ,0,0,0,0); 
+  @{$self->{ROM_ID}} =(0,0,0,0 ,0,0,0,0); 
 
   while ( $id_bit_number <= 64) {
     #-- adress single bits in a 16 byte string
@@ -732,13 +820,13 @@ sub OWX_Search_2480 ($$) {
     
     #-- discrepancy=1 and ROM_ID=0
     if( ($newdbit==1) and ($newibit==0) ){
-        $owx_LastDiscrepancy=$id_bit_number;
+        $self->{LastDiscrepancy}=$id_bit_number;
         if( $id_bit_number < 9 ){
-        $owx_LastFamilyDiscrepancy=$id_bit_number;
+        	$self->{LastFamilyDiscrepancy}=$id_bit_number;
         }
     } 
     #-- fill into device data; one char per 8 bits
-    $owx_ROM_ID[int(($id_bit_number-1)/8)]+=$newibit<<(($id_bit_number-1)%8);
+    $self->{ROM_ID}[int(($id_bit_number-1)/8)]+=$newibit<<(($id_bit_number-1)%8);
   
     #-- increment number
     $id_bit_number++;
@@ -757,9 +845,11 @@ sub OWX_Search_2480 ($$) {
 #
 ########################################################################################
 
-sub OWX_WriteBytePower_2480 ($$) {
+sub WriteBytePower_2480 ($) {
 
-  my ($hash,$dbyte) =@_;
+  my ($self,$dbyte) =@_;
+  my $hash = $self->{hash};
+  
   my $cmd="\x3F";
   my $ret="\x3E";
   #-- if necessary, prepend \xE3 character for command mode
@@ -778,13 +868,13 @@ sub OWX_WriteBytePower_2480 ($$) {
     $ret = $ret.chr($newchar2);
   }
   #-- write 1-Wire bus
-  my $res = OWX_Query($hash,$cmd);
+  my $res = $self->Query($cmd);
   #-- process result
   if( $res eq $ret ){
-    Log 5, "OWX: WriteBytePower OK";
+    Log(5, "OWX: WriteBytePower OK");
     return 1;
   } else {
-    Log 3, "OWX: WriteBytePower failure";
+    Log(3, "OWX: WriteBytePower failure");
     return 0;
   }
 }
@@ -804,13 +894,14 @@ sub OWX_WriteBytePower_2480 ($$) {
 #
 ########################################################################################
 
-sub OWX_Block_9097 ($$) {
-  my ($hash,$data) =@_;
+sub Block_9097 ($) {
+  my ($self,$data) =@_;
+  my $hash = $self->{hash};
   
    my $data2="";
    my $res=0;
    for (my $i=0; $i<length($data);$i++){
-     $res = OWX_TouchByte_9097($hash,ord(substr($data,$i,1)));
+     $res = $self->TouchByte_9097(ord(substr($data,$i,1)));
      $data2 = $data2.chr($res);
    }
    return $data2;
@@ -826,15 +917,16 @@ sub OWX_Block_9097 ($$) {
 #
 ########################################################################################
 
-sub OWX_Query_9097 ($$) {
+sub Query_9097 ($) {
 
-  my ($hash,$cmd) = @_;
+  my ($self,$cmd) = @_;
+  my $hash = $self->{hash};
   my ($i,$j,$k);
   #-- get hardware device 
-  my $owx_hwdevice = $hash->{HWDEVICE};
+  my $hwdevice = $hash->{HWDEVICE};
   
-  $owx_hwdevice->baudrate($owx_baud);
-  $owx_hwdevice->write_settings;
+  $hwdevice->baudrate($self->{baud});
+  $hwdevice->write_settings;
   
   if( $owx_debug > 2){
     my $res = "OWX: Sending out ";
@@ -843,17 +935,17 @@ sub OWX_Query_9097 ($$) {
       $k=ord(substr($cmd,$i,1))%16;
       $res.=sprintf "0x%1x%1x ",$j,$k;
     }
-    Log 3, $res;
+    Log(3, $res);
   } 
 	
-  my $count_out = $owx_hwdevice->write($cmd);
+  my $count_out = $hwdevice->write($cmd);
 
-  Log 1, "OWX: Write incomplete $count_out ne ".(length($cmd))."" if ( $count_out != length($cmd) );
+  Log(1, "OWX: Write incomplete $count_out ne ".(length($cmd))."") if ( $count_out != length($cmd) );
   #-- sleeping for some time
   select(undef,undef,undef,0.01);
  
   #-- read the data
-  my ($count_in, $string_in) = $owx_hwdevice->read(48);
+  my ($count_in, $string_in) = $hwdevice->read(48);
     
   if( $owx_debug > 2){
     my $res = "OWX: Receiving ";
@@ -862,7 +954,7 @@ sub OWX_Query_9097 ($$) {
       $k=ord(substr($string_in,$i,1))%16;
       $res.=sprintf "0x%1x%1x ",$j,$k;
     }
-    Log 3, $res;
+    Log(3, $res);
   }
 	
   #-- sleeping for some time
@@ -881,14 +973,15 @@ sub OWX_Query_9097 ($$) {
 #
 ########################################################################################
 
-sub OWX_ReadBit_9097 ($) {
-  my ($hash) = @_;
+sub ReadBit_9097 () {
+  my ($self) = @_;
+  my $hash = $self->{hash};
   
   #-- set baud rate to 115200 and query!!!
   my $sp1="\xFF";
-  $owx_baud=115200;
-  my $res=OWX_Query_9097($hash,$sp1);
-  $owx_baud=9600;
+  $self->{baud}=115200;
+  my $res=$self->Query_9097($sp1);
+  $self->{baud}=9600;
   #-- process result
   if( substr($res,0,1) eq "\xFF" ){
     return 1;
@@ -908,15 +1001,17 @@ sub OWX_ReadBit_9097 ($) {
 #
 ########################################################################################
 
-sub OWX_Reset_9097 ($) {
+sub Reset_9097 () {
 
-  my ($hash)=@_;
+  my ($self)=@_;
+  my $hash = $self->{hash};
+  
   my $cmd="";
     
   #-- Reset command \xF0
   $cmd="\xF0";
   #-- write 1-Wire bus
-  my $res =OWX_Query_9097($hash,$cmd);
+  my $res = $self->Query_9097($cmd);
   #-- TODO: process result
   #-- may vary between 0x10, 0x90, 0xe0
   return 1;
@@ -935,9 +1030,10 @@ sub OWX_Reset_9097 ($) {
 #
 ########################################################################################
 
-sub OWX_Search_9097 ($$) {
+sub Search_9097 ($) {
 
-  my ($hash,$mode)=@_;
+  my ($self,$mode)=@_;
+  my $hash = $self->{hash};
   
   my ($sp1,$sp2,$response,$search_direction,$id_bit_number);
     
@@ -948,10 +1044,10 @@ sub OWX_Search_9097 ($$) {
   my $last_zero = 0;
       
   #-- issue search command
-  $owx_baud=115200;
+  $self->{baud}=115200;
   $sp2="\x00\x00\x00\x00\xFF\xFF\xFF\xFF";
-  $response = OWX_Query_9097($hash,$sp2);
-  $owx_baud=9600;
+  $response = $self->Query_9097($sp2);
+  $self->{baud}=9600;
   #-- issue the normal search command \xF0 or the alarm search command \xEC 
   #if( $mode ne "alarm" ){
   #  $sp1 = 0xF0;
@@ -962,12 +1058,12 @@ sub OWX_Search_9097 ($$) {
   #$response = OWX_TouchByte($hash,$sp1); 
 
   #-- clear 8 byte of device id for current search
-  @owx_ROM_ID =(0,0,0,0 ,0,0,0,0); 
+  @{$self->{ROM_ID}} =(0,0,0,0 ,0,0,0,0); 
 
   while ( $id_bit_number <= 64) {
     #loop until through all ROM bytes 0-7  
-    my $id_bit     = OWX_TouchBit_9097($hash,1);
-    my $cmp_id_bit = OWX_TouchBit_9097($hash,1);
+    my $id_bit     = $self->TouchBit_9097(1);
+    my $cmp_id_bit = $self->TouchBit_9097(1);
      
     #print "id_bit = $id_bit, cmp_id_bit = $cmp_id_bit\n";
      
@@ -980,15 +1076,15 @@ sub OWX_Search_9097 ($$) {
     } else {
       # hä ? if this discrepancy if before the Last Discrepancy
       # on a previous next then pick the same as last time
-      if ( $id_bit_number < $owx_LastDiscrepancy ){
-        if (($owx_ROM_ID[$rom_byte_number] & $rom_byte_mask) > 0){
+      if ( $id_bit_number < $self->{LastDiscrepancy} ){
+        if (($self->{ROM_ID}[$rom_byte_number] & $rom_byte_mask) > 0){
           $search_direction = 1;
         } else {
           $search_direction = 0;
         }
       } else {
         # if equal to last pick 1, if not then pick 0
-        if ($id_bit_number == $owx_LastDiscrepancy){
+        if ($id_bit_number == $self->{LastDiscrepancy}){
           $search_direction = 1;
         } else {
           $search_direction = 0;
@@ -999,7 +1095,7 @@ sub OWX_Search_9097 ($$) {
         $last_zero = $id_bit_number;
         # check for Last discrepancy in family
         if ($last_zero < 9) {
-          $owx_LastFamilyDiscrepancy = $last_zero;
+          $self->{LastFamilyDiscrepancy} = $last_zero;
         }
       }
     }
@@ -1008,14 +1104,14 @@ sub OWX_Search_9097 ($$) {
     # with mask rom_byte_mask
     #print "ROM byte mask = $rom_byte_mask, search_direction = $search_direction\n";
     if ( $search_direction == 1){
-      $owx_ROM_ID[$rom_byte_number] |= $rom_byte_mask;
+      $self->{ROM_ID}[$rom_byte_number] |= $rom_byte_mask;
     } else {
-      $owx_ROM_ID[$rom_byte_number] &= ~$rom_byte_mask;
+      $self->{ROM_ID}[$rom_byte_number] &= ~$rom_byte_mask;
     }
     # serial number search direction write bit
-    $response = OWX_WriteBit_9097($hash,$search_direction);
+    $response = $self->WriteBit_9097($search_direction);
     # increment the byte counter id_bit_number
-    # and shift the mask rom_byte_mask
+    # and shift the mask rom_byte_mask--
     $id_bit_number++;
     $rom_byte_mask <<= 1;
     #-- if the mask is 0 then go to new rom_byte_number and
@@ -1023,7 +1119,7 @@ sub OWX_Search_9097 ($$) {
       $rom_byte_number++;
       $rom_byte_mask = 1;
     } 
-    $owx_LastDiscrepancy = $last_zero;
+    $self->{LastDiscrepancy} = $last_zero;
   }
   return 1; 
 }
@@ -1038,8 +1134,9 @@ sub OWX_Search_9097 ($$) {
 #
 ########################################################################################
 
-sub OWX_TouchBit_9097 ($$) {
-  my ($hash,$bit) = @_;
+sub TouchBit_9097 ($) {
+  my ($self,$bit) = @_;
+  my $hash = $self->{hash};
   
   my $sp1;
   #-- set baud rate to 115200 and query!!!
@@ -1048,9 +1145,9 @@ sub OWX_TouchBit_9097 ($$) {
   } else {
     $sp1="\x00";
   }
-  $owx_baud=115200;
-  my $res=OWX_Query_9097($hash,$sp1);
-  $owx_baud=9600;
+  $self->{baud}=115200;
+  my $res=$self->Query_9097($sp1);
+  $self->{baud}=9600;
   #-- process result
   my $sp2=substr($res,0,1);
   if( $sp1 eq $sp2 ){
@@ -1070,8 +1167,9 @@ sub OWX_TouchBit_9097 ($$) {
 #
 ########################################################################################
 
-sub OWX_TouchByte_9097 ($$) {
-  my ($hash,$byte) = @_;
+sub TouchByte_9097 ($) {
+  my ($self,$byte) = @_;
+  my $hash = $self->{hash};
   
   my $loop;
   my $result=0;
@@ -1082,11 +1180,11 @@ sub OWX_TouchByte_9097 ($$) {
     $result >>=1;
     #-- if sending a 1 then read a bit else write 0
     if( $byte & 0x01 ){
-      if( OWX_ReadBit_9097($hash) ){
+      if( $self->ReadBit_9097() ){
         $result |= 0x80;
       }
     } else {
-      OWX_WriteBit_9097($hash,0);
+      $self->WriteBit_9097(0);
     }
     $byte >>= 1;
   }
@@ -1103,8 +1201,9 @@ sub OWX_TouchByte_9097 ($$) {
 #
 ########################################################################################
 
-sub OWX_WriteBit_9097 ($$) {
-  my ($hash,$bit) = @_;
+sub WriteBit_9097 ($) {
+  my ($self,$bit) = @_;
+  my $hash = $self->{hash};
   
   my $sp1;
   #-- set baud rate to 115200 and query!!!
@@ -1113,9 +1212,9 @@ sub OWX_WriteBit_9097 ($$) {
   } else {
     $sp1="\x00";
   }
-  $owx_baud=115200;
-  my $res=OWX_Query_9097($hash,$sp1);
-  $owx_baud=9600;
+  $self->{baud}=115200;
+  my $res=$self->Query_9097($sp1);
+  $self->{baud}=9600;
   #-- process result
   if( substr($res,0,1) eq $sp1 ){
     return 1;

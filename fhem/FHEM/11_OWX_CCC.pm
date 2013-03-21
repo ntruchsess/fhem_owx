@@ -5,6 +5,7 @@
 # FHEM module providing hardware dependent functions for the COC/CUNO interface of OWX
 #
 # Prof. Dr. Peter A. Henning
+# Norbert Truchsess
 #
 # $Id: 11_OWX_CCC.pm 3.19 2013-03 - pahenning $
 #
@@ -32,7 +33,14 @@
 
 package OWX_CCC;
 
-sub new($$) {
+use strict;
+use warnings;
+
+use vars qw{$owx_debug};
+
+sub Log ($$);
+
+sub new($) {
 	my ($class,$hash) = @_;
 
 	return bless {
@@ -41,33 +49,90 @@ sub new($$) {
 }
 
 sub Define($) {
-	my ($self,$dev) = @_;
+	my ($self,$def) = @_;
 	my $hash = $self->{hash};
+	
+	my @a = split("[ \t][ \t]*", $def);
+
+	#-- check syntax
+	if(int(@a) < 3){
+		return "OWX: Syntax error - must be define <name> OWX"
+	}
+	#-- If this line contains 3 parameters, it is the bus master definition
+	my $dev = $a[2];
 		
     $hash->{DeviceName} = $dev;
     #-- Second step in case of CUNO: See if we can open it
     my $msg = "OWX: COC/CUNO device $dev";
     #-- hash des COC/CUNO
-    $owx_hwdevice = $main::defs{$dev};
-    if($owx_hwdevice){
-      main::Log(1,$msg." defined");
+    my $hwdevice = $main::defs{$dev};
+    if($hwdevice){
+      Log 1,$msg." defined";
       #-- store with OWX device
       $hash->{INTERFACE} = "COC/CUNO";
-      $hash->{HWDEVICE}    = $owx_hwdevice;
+      $hash->{HWDEVICE}    = $hwdevice;
       #-- loop for some time until the state is "Initialized"
       for(my $i=0;$i<6;$i++){
-        last if( $owx_hwdevice->{STATE} eq "Initialized");
-        main::Log(1,"OWX: Waiting, at t=$i ".$dev." is still ".$owx_hwdevice->{STATE});
+        last if( $hwdevice->{STATE} eq "Initialized");
+        Log 1,"OWX: Waiting, at t=$i ".$dev." is still ".$hwdevice->{STATE};
         select(undef,undef,undef,3); 
       }
-      main::Log(1, "OWX: Can't open ".$dev) if( $owx_hwdevice->{STATE} ne "Initialized");
+      Log 1, "OWX: Can't open ".$dev if( $hwdevice->{STATE} ne "Initialized");
       #-- reset the 1-Wire system in COC/CUNO
-      CUL_SimpleWrite($owx_hwdevice, "Oi");
+      CUL_SimpleWrite($hwdevice, "Oi");
       return undef;
     }else{
-      main::Log(1, $msg." not defined");
+      Log 1, $msg." not defined";
       return $msg." not defined";
     } 
+}
+
+sub Detect () {
+  my ($self) = @_;
+  my $hash = $self->{hash};
+  
+  my ($ret,$ress);
+  my $name = $hash->{NAME};
+  my $ress0 = "OWX: 1-Wire bus $name: interface ";
+  $ress     = $ress0;
+
+  #-- get the interface
+  my $interface;
+  my $hwdevice  = $hash->{HWDEVICE};
+  
+  select(undef,undef,undef,2);
+  #-- type of interface
+  CUL_SimpleWrite($hwdevice, "V");
+  select(undef,undef,undef,0.01);
+  my ($err,$ob) = CCC_ReadAnswer($hwdevice);
+  #my $ob = CallFn($owx_hwdevice->{NAME}, "GetFn", $owx_hwdevice, (" ", "raw", "V"));
+  #-- process result for detection
+  if( !defined($ob)){
+    $ob="";
+    $ret=0;
+  #-- COC
+  }elsif( $ob =~ m/.*CSM.*/){
+    $interface="COC";
+    $ress .= "DS2482 / COC detected in $hwdevice->{NAME} with response $ob";
+    $ret=1;
+  #-- CUNO
+  }elsif( $ob =~ m/.*CUNO.*/){
+    $interface="CUNO";
+    $ress .= "DS2482 / CUNO detected in $hwdevice->{NAME} with response $ob";
+    $ret=1;
+  #-- something else
+  } else {
+    $ret=0;
+  }
+  #-- treat the failure cases
+  if( $ret == 0 ){
+    $interface=undef;
+    $ress .= "in $hwdevice->{NAME} could not be addressed, return was $ob";
+  }
+  #-- store with OWX device
+  $hash->{INTERFACE} = $interface;
+  Log 1, $ress;
+  return $ret; 
 }
 
 sub Alarms () {
@@ -91,41 +156,41 @@ sub Alarms () {
 ########################################################################################
 
 sub Complex ($$$) {
-  my ($self,$owx_dev,$data,$numread) =@_;
+  my ($self,$dev,$data,$numread) =@_;
   my $hash = $self->{hash};
   
   my $select;
   my $res = "";
   
   #-- get the interface
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $hash->{HWDEVICE};
   
   #-- has match ROM part
-  if( $owx_dev ){
+  if( $dev ){
     #-- ID of the device
-    my $owx_rnf = substr($owx_dev,3,12);
-    my $owx_f   = substr($owx_dev,0,2);
+    my $owx_rnf = substr($dev,3,12);
+    my $owx_f   = substr($dev,0,2);
 
     #-- 8 byte 1-Wire device address
-    my @owx_ROM_ID  =(0,0,0,0 ,0,0,0,0); 
+    my @rom_id  =(0,0,0,0 ,0,0,0,0); 
     #-- from search string to reverse string id
-    $owx_dev=~s/\.//g;
+    $dev=~s/\.//g;
     for(my $i=0;$i<8;$i++){
-       $owx_ROM_ID[7-$i]=substr($owx_dev,2*$i,2);
+       $rom_id[7-$i]=substr($dev,2*$i,2);
     }
-    $select=sprintf("Om%s%s%s%s%s%s%s%s",@owx_ROM_ID); 
+    $select=sprintf("Om%s%s%s%s%s%s%s%s",@rom_id); 
     Log 3,"OWX: Sending match ROM to COC/CUNO ".$select
        if( $owx_debug > 1);
     #--
-    CUL_SimpleWrite($owx_hwdevice, $select);
-    my ($err,$ob) = OWX_CCC_ReadAnswer($owx_hwdevice);
+    CUL_SimpleWrite($hwdevice, $select);
+    my ($err,$ob) = CCC_ReadAnswer($hwdevice);
     #-- padding first 9 bytes into result string, since we have this 
     #   in the serial interfaces as well
     $res .= "000000000";
   }
   #-- has data part
   if ( $data ){
-    OWX_CCC_Send($hash,$data);
+    $self->CCC_Send($data);
     $res .= $data;
   }
   #-- has receive part
@@ -133,7 +198,7 @@ sub Complex ($$$) {
     #$numread += length($data);
     Log 3,"COC/CUNO is expected to deliver $numread bytes"
       if( $owx_debug > 1);
-    $res.=OWX_CCC_Receive($hash,$numread);
+    $res.=$self->CCC_Receive($numread);
   }
   Log 3,"OWX: returned from COC/CUNO $res"
     if( $owx_debug > 1);
@@ -159,18 +224,18 @@ sub Discover () {
   my $res;
   
   #-- get the interface
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $hash->{HWDEVICE};
   
   #-- zero the array
   @{$hash->{DEVS}}=();
   #-- reset the busmaster
-  OWX_CCC_Init($hash);
+  $self->Init();
   #-- get the devices
-  CUL_SimpleWrite($owx_hwdevice, "Oc");
+  CUL_SimpleWrite($hwdevice, "Oc");
   select(undef,undef,undef,0.5);
-  my ($err,$ob) = OWX_CCC_ReadAnswer($owx_hwdevice);
+  my ($err,$ob) = CCC_ReadAnswer($hwdevice);
   if( $ob ){
-    Log 3,"OWX_CCC_Discover: Answer to ".$owx_hwdevice->{NAME}." device search is ".$ob;
+    Log 3,"OWX_CCC_Discover: Answer to ".$hwdevice->{NAME}." device search is ".$ob;
     foreach my $dx (split(/\n/,$ob)){
       next if ($dx !~ /^\d\d?\:[0-9a-fA-F]{16}/);
       $dx =~ s/\d+\://;
@@ -184,7 +249,7 @@ sub Discover () {
     }
     return 1;
   } else {
-    Log 1, "OWX: No answer to ".$owx_hwdevice->{NAME}." device search";
+    Log 1, "OWX: No answer to ".$hwdevice->{NAME}." device search";
     return 0;
   }
 }
@@ -205,9 +270,9 @@ sub Init () {
   my $hash = $self->{hash};
   
   #-- get the interface
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $hash->{HWDEVICE};
   
-  my $ob = CallFn($owx_hwdevice->{NAME}, "GetFn", $owx_hwdevice, (" ", "raw", "ORm"));
+  my $ob = CallFn($hwdevice->{NAME}, "GetFn", $hwdevice, (" ", "raw", "ORm"));
   return 0 if( !defined($ob) );
   return 0 if( length($ob) < 13);
   if( substr($ob,9,4) eq "OK" ){
@@ -228,11 +293,11 @@ sub Init () {
 ########################################################################################
 
 sub
-OWX_CCC_ReadAnswer($)
+CCC_ReadAnswer($)
 {
-  my ($hash) = @_;
+  my ($hwdevice) = @_;
   
-  my $type = $hash->{TYPE};
+  my $type = $hwdevice->{TYPE};
 
   my $arg ="";
   my $anydata=0;
@@ -241,22 +306,22 @@ OWX_CCC_ReadAnswer($)
   my ($mculdata, $rin) = ("", '');
   my $buf;
   my $to = 3;                                         # 3 seconds timeout
-  $to = $hash->{RA_Timeout} if($hash->{RA_Timeout});  # ...or less
+  $to = $hwdevice->{RA_Timeout} if($hwdevice->{RA_Timeout});  # ...or less
   for(;;) {
       return ("Device lost when reading answer for get $arg", undef)
-        if(!$hash->{FD});
+        if(!$hwdevice->{FD});
 
-      vec($rin, $hash->{FD}, 1) = 1;
+      vec($rin, $hwdevice->{FD}, 1) = 1;
       my $nfound = select($rin, undef, undef, $to);
       if($nfound < 0) {
         next if ($! == EAGAIN() || $! == EINTR() || $! == 0);
         my $err = $!;
-        DevIo_Disconnected($hash);
+        DevIo_Disconnected($hwdevice); # TODO: DevIO_Disconnected sets hash on readyFnList! -> results in errors later as there's no ReadyFn in OWX
         return("OWX_CCC_ReadAnswer $arg: $err", undef);
       }
       return ("Timeout reading answer for get $arg", undef)
         if($nfound == 0);
-      $buf = DevIo_SimpleRead($hash);
+      $buf = DevIo_SimpleRead($hwdevice);
       return ("No data", undef) if(!defined($buf));
 
  
@@ -269,7 +334,7 @@ OWX_CCC_ReadAnswer($)
     # \n\n is socat special
     if($mculdata =~ m/\r\n/ || $anydata || $mculdata =~ m/\n\n/ ) {
       if($regexp && $mculdata !~ m/$regexp/) {
-        CUL_Parse($hash, $hash, $hash->{NAME}, $mculdata, $hash->{initString});
+        CUL_Parse($hwdevice, $hwdevice, $hwdevice->{NAME}, $mculdata, $hwdevice->{initString});
       } else {
         return (undef, $mculdata)
       }
@@ -287,23 +352,24 @@ OWX_CCC_ReadAnswer($)
 #
 ########################################################################################
 
-sub OWX_CCC_Receive ($$) {
-  my ($hash,$numread) = @_;
+sub CCC_Receive ($) {
+  my ($self,$numread) = @_;
+  my $hash = $self->{hash};
   
   my $res="";
   my $res2="";
   
   #-- get the interface
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $hash->{HWDEVICE};
   
   for( 
   my $i=0;$i<$numread;$i++){
-  #Log 1, "Sending $owx_hwdevice->{NAME}: OrB";
-  #my $ob = CallFn($owx_hwdevice->{NAME}, "GetFn", $owx_hwdevice, (" ", "raw", "OrB"));
-  CUL_SimpleWrite($owx_hwdevice, "OrB");
+  #Log 1, "Sending $hwdevice->{NAME}: OrB";
+  #my $ob = CallFn($hwdevice->{NAME}, "GetFn", $hwdevice, (" ", "raw", "OrB"));
+  CUL_SimpleWrite($hwdevice, "OrB");
   select(undef,undef,undef,0.01);
-  my ($err,$ob) = OWX_CCC_ReadAnswer($owx_hwdevice);
-  #Log 1, "Answer from $owx_hwdevice->{NAME}:$ob: ";
+  my ($err,$ob) = CCC_ReadAnswer($hwdevice);
+  #Log 1, "Answer from $hwdevice->{NAME}:$ob: ";
 
     #-- process results  
     if( !(defined($ob)) ){
@@ -332,10 +398,10 @@ sub OWX_CCC_Receive ($$) {
     }elsif( length($ob) == 20 ){
       $numread++;
     }else{
-      Log 1,"OWX: Received unexpected number of ".length($ob)." bytes on bus ".$owx_hwdevice->{NAME};
+      Log 1,"OWX: Received unexpected number of ".length($ob)." bytes on bus ".$hwdevice->{NAME};
     } 
   }
-  Log 3, "OWX: Received $numread bytes = $res2 on bus ".$owx_hwdevice->{NAME}
+  Log 3, "OWX: Received $numread bytes = $res2 on bus ".$hwdevice->{NAME}
      if( $owx_debug > 1);
   
   return($res);
@@ -357,9 +423,9 @@ sub Reset () {
   my $hash = $self->{hash};
   
   #-- get the interface
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $hash->{HWDEVICE};
   
-  my $ob = CallFn($owx_hwdevice->{NAME}, "GetFn", $owx_hwdevice, (" ", "raw", "ORb"));
+  my $ob = CallFn($hwdevice->{NAME}, "GetFn", $hwdevice, (" ", "raw", "ORb"));
   
   if( substr($ob,9,4) eq "OK:1" ){
     return 1;
@@ -379,22 +445,23 @@ sub Reset () {
 #
 ########################################################################################
 
-sub OWX_CCC_Send ($$) {
-  my ($hash,$data) =@_;
+sub CCC_Send ($) {
+  my ($self,$data) =@_;
+  my $hash = $self->{hash};
   
   my ($i,$j,$k);
   my $res  = "";
   my $res2 = "";
 
   #-- get the interface
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $hash->{HWDEVICE};
   
   for( $i=0;$i<length($data);$i++){
     $j=int(ord(substr($data,$i,1))/16);
     $k=ord(substr($data,$i,1))%16;
   	$res  =sprintf "OwB%1x%1x ",$j,$k;
     $res2.=sprintf "0x%1x%1x ",$j,$k;
-    CUL_SimpleWrite($owx_hwdevice, $res);
+    CUL_SimpleWrite($hwdevice, $res);
   } 
   Log 3,"OWX: Send to COC/CUNO $res2"
      if( $owx_debug > 1);
@@ -418,15 +485,15 @@ sub Verify ($) {
   my $i;
     
   #-- get the interface
-  my $owx_hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $hash->{HWDEVICE};
   
   #-- Ask the COC/CUNO 
-  CUL_SimpleWrite($owx_hwdevice, "OCf");
+  CUL_SimpleWrite($hwdevice, "OCf");
   #-- sleeping for some time
   select(undef,undef,undef,3);
-  CUL_SimpleWrite($owx_hwdevice, "Oc");
+  CUL_SimpleWrite($hwdevice, "Oc");
   select(undef,undef,undef,0.5);
-  my ($err,$ob) = OWX_CCC_ReadAnswer($owx_hwdevice);
+  my ($err,$ob) = $self->($hwdevice);
   if( $ob ){
     foreach my $dx (split(/\n/,$ob)){
       next if ($dx !~ /^\d\d?\:[0-9a-fA-F]{16}/);
