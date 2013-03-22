@@ -11,14 +11,15 @@
 #
 ########################################################################################
 #
-# Provides the following subroutines
+# Provides the following methods for OWX
 #
-# OWX_SER_Alarms
-# OWX_SER_Complex
-# OWX_SER_Discover
-# OWX_SER_Init
-# OWX_SER_Reset
-# OWX_SER_Verify
+# Define
+# Alarms
+# Complex
+# Discover
+# Init
+# Reset
+# Verify
 #
 ########################################################################################
 #
@@ -74,13 +75,13 @@ sub Define ($) {
     }
     #-- Second step in case of serial device: open the serial device to test it
     my $msg = "OWX: Serial device $dev";
-    my $ret = DevIo_OpenDev($hash,0,undef);
+    my $ret = main::DevIo_OpenDev($hash,0,undef);
     my $hwdevice = $hash->{USBDev};
     if(!defined($hwdevice)){
-      Log(1, $msg." not defined");
+      main::Log(1, $msg." not defined");
       return "OWX: Can't open serial device $dev: $!"
     } else {
-      Log(1,$msg." defined");
+      main::Log(1,$msg." defined");
     }
     $hwdevice->reset_error();
     $hwdevice->baudrate(9600);
@@ -141,7 +142,7 @@ sub Detect () {
       $k=ord(substr($res,$i,1))%16;
       $ress.=sprintf "0x%1x%1x ",$j,$k;
     }
-    Log(1, $ress);
+    main::Log(1, $ress);
     $ress = $ress0;
     #-- sleeping for some time
     select(undef,undef,undef,0.5);
@@ -156,7 +157,7 @@ sub Detect () {
     }
   }
   $hash->{INTERFACE} = $interface;
-  Log(1, $ress);
+  main::Log(1, $ress);
   return $ret; 
 }
 
@@ -174,7 +175,7 @@ sub Alarms () {
   while( $self->{LastDeviceFlag}==0 && $res != 0){
     $res = $res & $self->SER_Next("alarm");
   }
-  Log(1, " Alarms = ".join(' ',@{$hash->{ALARMDEVS}}));
+  main::Log(1, " Alarms = ".join(' ',@{$hash->{ALARMDEVS}}));
   return( int(@{$hash->{ALARMDEVS}}) );
 } 
 
@@ -240,7 +241,7 @@ sub Complex ($$$) {
       $k=ord(substr($select,$i,1))%16;
       $res2.=sprintf "0x%1x%1x ",$j,$k;
     }
-    Log(3, $res2);
+    main::Log(3, $res2);
   }
   if( $interface eq "DS2480" ){
     $res = $self->Block_2480($select);
@@ -256,7 +257,7 @@ sub Complex ($$$) {
       $k=ord(substr($res,$i,1))%16;
       $res2.=sprintf "0x%1x%1x ",$j,$k;
     }
-    Log(3, $res2);
+    main::Log(3, $res2);
   }
   
   return $res
@@ -383,7 +384,7 @@ sub Search ($) {
   #-- 1-Wire reset
   if ($self->Reset()==0){
     #-- reset the search
-    Log(1, "OWX: Search reset failed");
+    main::Log(1, "OWX: Search reset failed");
     $self->{LastDiscrepancy} = 0;
     $self->{LastDeviceFlag} = 0;
     $self->{LastFamilyDiscrepancy} = 0;
@@ -396,13 +397,13 @@ sub Search ($) {
   }elsif( $interface eq "DS9097" ){
     $self->Search_9097($mode);
   }else{
-    Log(1,"OWX: Search called with unknown interface ".$interface);
+    main::Log(1,"OWX: Search called with unknown interface ".$interface);
     return 0;
   }
   #--check if we really found a device
-  if( OWX_CRC($self->{ROM_ID})!= 0){
+  if( main::OWX_CRC($self->{ROM_ID})!= 0){
   #-- reset the search
-    Log(1, "OWX: Search CRC failed ");
+    main::Log(1, "OWX: Search CRC failed ");
     $self->{LastDiscrepancy} = 0;
     $self->{LastDeviceFlag} = 0;
     $self->{LastFamilyDiscrepancy} = 0;
@@ -423,7 +424,7 @@ sub Search ($) {
     
   #-- mode was to verify presence of a device
   if ($mode eq "verify") {
-    Log(5, "OWX: Device verified $dev");
+    main::Log(5, "OWX: Device verified $dev");
     return 1;
   #-- mode was to discover devices
   } elsif( $mode eq "discover" ){
@@ -447,7 +448,7 @@ sub Search ($) {
     if( $self->{LastDeviceFlag}!=1 ){
       #-- push to list
       push(@{$hash->{DEVS}},$dev);
-      Log(5, "OWX: New device found $dev");
+      main::Log(5, "OWX: New device found $dev");
     }  
     return 1;
     
@@ -463,7 +464,7 @@ sub Search ($) {
     if( $self->{LastDeviceFlag}!=1 ){
     #--push to list
       push(@{$hash->{ALARMDEVS}},$dev);
-      Log(5, "OWX: New alarm device found $dev");
+      main::Log(5, "OWX: New alarm device found $dev");
     }  
     return 1;
   }
@@ -577,10 +578,10 @@ sub Level_2480 ($) {
     my $r1  = ord(substr($res,0,1)) & 236;
     my $r2  = ord(substr($res,1,1)) & 236;
     if( ($r1 eq 236) && ($r2 eq 236) ){
-      Log(5, "OWX: Level change to normal OK");
+      main::Log(5, "OWX: Level change to normal OK");
       return 1;
     } else {
-      Log(3, "OWX: Failed to change to normal level");
+      main::Log(3, "OWX: Failed to change to normal level");
       return 0;
     }
   #-- start pulse  
@@ -591,10 +592,10 @@ sub Level_2480 ($) {
     my $res = $self->Query_2480($cmd,$retlen);
     #-- process result
     if( $res eq "\x3E" ){
-      Log(5, "OWX: Level change OK");
+      main::Log(5, "OWX: Level change OK");
       return 1;
     } else {
-      Log(3, "OWX: Failed to change level");
+      main::Log(3, "OWX: Failed to change level");
       return 0;
     }
   }
@@ -631,15 +632,15 @@ sub Query_2480 ($$) {
       $k=ord(substr($cmd,$i,1))%16;
   	$res.=sprintf "0x%1x%1x ",$j,$k;
     }
-    Log(3, $res);
+    main::Log(3, $res);
   }
   
   my $count_out = $hwdevice->write($cmd);
   
   if( !($count_out)){
-    Log(3,"OWX_Query_2480: No return value after writing") if( $owx_debug > 0);
+    main::Log(3,"OWX_Query_2480: No return value after writing") if( $owx_debug > 0);
   } else {
-    Log(3, "OWX_Query_2480: Write incomplete $count_out ne ".(length($cmd))."") if ( ($count_out != length($cmd)) & ($owx_debug > 0));
+    main::Log(3, "OWX_Query_2480: Write incomplete $count_out ne ".(length($cmd))."") if ( ($count_out != length($cmd)) & ($owx_debug > 0));
   }
   #-- sleeping for some time
   select(undef,undef,undef,0.04);
@@ -652,7 +653,7 @@ sub Query_2480 ($$) {
     $m = $count_in;		
   	$n++;
  	if( $owx_debug > 2){
- 	  Log(3, "Schleifendurchlauf $n");
+ 	  main::Log(3, "Schleifendurchlauf $n");
  	  }
  	if ($n > 100) {                                       
 	  $m = $retlen;                                         
@@ -665,7 +666,7 @@ sub Query_2480 ($$) {
         $k=ord(substr($string_part,$i,1))%16;
         $res.=sprintf "0x%1x%1x ",$j,$k;
 	  }
-      Log(3, $res)
+      main::Log(3, $res)
         if( $count_in > 0);
 	}
   }
@@ -712,7 +713,7 @@ sub Reset_2480 () {
   #-- process result
   $r1  = ord(substr($res,0,1)) & 192;
   if( $r1 != 192){
-    Log(3, "OWX: Reset failure on bus $name");
+    main::Log(3, "OWX: Reset failure on bus $name");
     return 0;
   }
   $hash->{ALARMED} = "no";
@@ -723,7 +724,7 @@ sub Reset_2480 () {
     #Log(3, "OWX: No presence detected";
     return 1;
   }elsif( $r2 ==2 ){
-    Log(1, "OWX: Alarm presence detected on bus $name");
+    main::Log(1, "OWX: Alarm presence detected on bus $name");
     $hash->{ALARMED} = "yes";
   }
   return 1;
@@ -768,13 +769,13 @@ sub Search_2480 ($) {
     if( $id_bit_number <= $self->{LastDiscrepancy}){
       #-- first use the ROM ID bit to set the search direction  
       if( $id_bit_number < $self->{LastDiscrepancy} ) {
-        $search_direction = ($self->{ROM_ID}[$newcpos2]>>$newimsk2) & 1;
+        $search_direction = (@{$self->{ROM_ID}}[$newcpos2]>>$newimsk2) & 1;
         #-- at the last discrepancy search into 1 direction anyhow
       } else {
         $search_direction = 1;
       } 
       #-- fill into search data;
-      $self->{search}[$newcpos]+=$search_direction<<(2*$newimsk+1);
+      @{$self->{search}}[$newcpos]+=$search_direction<<(2*$newimsk+1);
     }
     #--increment number
     $id_bit_number++;
@@ -793,7 +794,7 @@ sub Search_2480 ($) {
      
   #-- interpret the return data
   if( length($response)!=16 ) {
-    Log(3, "OWX: Search 2nd return has wrong parameter with length = ".length($response)."");
+    main::Log(3, "OWX: Search 2nd return has wrong parameter with length = ".length($response)."");
     return 0;
   }
   #-- Response search data parsing (Fig. 11 of Maxim AN192)
@@ -826,7 +827,7 @@ sub Search_2480 ($) {
         }
     } 
     #-- fill into device data; one char per 8 bits
-    $self->{ROM_ID}[int(($id_bit_number-1)/8)]+=$newibit<<(($id_bit_number-1)%8);
+    @{$self->{ROM_ID}}[int(($id_bit_number-1)/8)]+=$newibit<<(($id_bit_number-1)%8);
   
     #-- increment number
     $id_bit_number++;
@@ -871,10 +872,10 @@ sub WriteBytePower_2480 ($) {
   my $res = $self->Query($cmd);
   #-- process result
   if( $res eq $ret ){
-    Log(5, "OWX: WriteBytePower OK");
+    main::Log(5, "OWX: WriteBytePower OK");
     return 1;
   } else {
-    Log(3, "OWX: WriteBytePower failure");
+    main::Log(3, "OWX: WriteBytePower failure");
     return 0;
   }
 }
@@ -935,12 +936,12 @@ sub Query_9097 ($) {
       $k=ord(substr($cmd,$i,1))%16;
       $res.=sprintf "0x%1x%1x ",$j,$k;
     }
-    Log(3, $res);
+    main::Log(3, $res);
   } 
 	
   my $count_out = $hwdevice->write($cmd);
 
-  Log(1, "OWX: Write incomplete $count_out ne ".(length($cmd))."") if ( $count_out != length($cmd) );
+  main::Log(1, "OWX: Write incomplete $count_out ne ".(length($cmd))."") if ( $count_out != length($cmd) );
   #-- sleeping for some time
   select(undef,undef,undef,0.01);
  
@@ -954,7 +955,7 @@ sub Query_9097 ($) {
       $k=ord(substr($string_in,$i,1))%16;
       $res.=sprintf "0x%1x%1x ",$j,$k;
     }
-    Log(3, $res);
+    main::Log(3, $res);
   }
 	
   #-- sleeping for some time
@@ -1077,7 +1078,7 @@ sub Search_9097 ($) {
       # hä ? if this discrepancy if before the Last Discrepancy
       # on a previous next then pick the same as last time
       if ( $id_bit_number < $self->{LastDiscrepancy} ){
-        if (($self->{ROM_ID}[$rom_byte_number] & $rom_byte_mask) > 0){
+        if ((@{$self->{ROM_ID}}[$rom_byte_number] & $rom_byte_mask) > 0){
           $search_direction = 1;
         } else {
           $search_direction = 0;
@@ -1104,9 +1105,9 @@ sub Search_9097 ($) {
     # with mask rom_byte_mask
     #print "ROM byte mask = $rom_byte_mask, search_direction = $search_direction\n";
     if ( $search_direction == 1){
-      $self->{ROM_ID}[$rom_byte_number] |= $rom_byte_mask;
+      @{$self->{ROM_ID}}[$rom_byte_number] |= $rom_byte_mask;
     } else {
-      $self->{ROM_ID}[$rom_byte_number] &= ~$rom_byte_mask;
+      @{$self->{ROM_ID}}[$rom_byte_number] &= ~$rom_byte_mask;
     }
     # serial number search direction write bit
     $response = $self->WriteBit_9097($search_direction);

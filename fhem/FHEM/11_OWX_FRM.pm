@@ -10,8 +10,9 @@
 #
 ########################################################################################
 #
-# Provides the following subroutines for OWX
+# Provides the following methods for OWX
 #
+# Define
 # Alarms
 # Complex
 # Discover
