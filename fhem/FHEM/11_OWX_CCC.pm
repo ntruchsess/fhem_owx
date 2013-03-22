@@ -7,30 +7,19 @@
 # Prof. Dr. Peter A. Henning
 # Norbert Truchsess
 #
-# Contributions from: Martin Fischer, Rudolf König, Boris Neubert, Joachim Herold, 
-#
 # $Id: 11_OWX_CCC.pm 3.19 2013-03 - pahenning $
 #
 ########################################################################################
 #
 # Provides the following methods for OWX
 #
-# Define
 # Alarms
 # Complex
+# Define
 # Discover
 # Init
 # Reset
 # Verify
-#
-########################################################################################
-#
-# OWX_SER_Alarms - Find devices on the 1-Wire bus, 
-#              which have the alarm flag set
-#
-# Parameter hash = hash of bus master
-#
-# Return 0 because not implemented here.
 #
 ########################################################################################
 
@@ -39,6 +28,12 @@ package OWX_CCC;
 use strict;
 use warnings;
 
+########################################################################################
+# 
+# Constructor
+#
+########################################################################################
+
 sub new($) {
 	my ($class,$hash) = @_;
 
@@ -46,6 +41,18 @@ sub new($) {
 		hash => $hash,
 	}, $class;
 }
+
+########################################################################################
+# 
+# Public methods
+#
+########################################################################################
+#
+# Define - Implements DefFn function
+# 
+# Parameter def = definition string
+#
+########################################################################################
 
 sub Define($) {
 	my ($self,$def) = @_;
@@ -85,6 +92,14 @@ sub Define($) {
       return $msg." not defined";
     } 
 }
+
+########################################################################################
+#
+# Detect - Find out if we have the proper interface
+#
+# Return 
+#
+########################################################################################
 
 sub Detect () {
   my ($self) = @_;
@@ -134,6 +149,14 @@ sub Detect () {
   return $ret; 
 }
 
+########################################################################################
+#
+# Alarms - Find devices on the 1-Wire bus, which have the alarm flag set
+#
+# Return 0 because not implemented here.
+#
+########################################################################################
+
 sub Alarms () {
   my ($self) = @_;
   
@@ -142,10 +165,9 @@ sub Alarms () {
 
 ########################################################################################
 # 
-# OWX_CCC_Complex - Send match ROM, data block and receive bytes as response
+# Complex - Send match ROM, data block and receive bytes as response
 #
-# Parameter hash    = hash of bus master, 
-#           owx_dev = ROM ID of device
+# Parameter dev = ROM ID of device
 #           data    = string to send
 #           numread = number of bytes to receive
 #
@@ -206,9 +228,7 @@ sub Complex ($$$) {
 
 ########################################################################################
 #
-# OWX_CCC_Discover - Discover devices on the 1-Wire bus via internal firmware
-#
-# Parameter hash = hash of bus master
+# Discover - Discover devices on the 1-Wire bus via internal firmware
 #
 # Return 0  : error
 #        1  : OK
@@ -216,7 +236,6 @@ sub Complex ($$$) {
 ########################################################################################
 
 sub Discover () {
-  
   my ($self) = @_;
   my $hash = $self->{hash};
   
@@ -255,9 +274,7 @@ sub Discover () {
 
 ########################################################################################
 # 
-# OWX_CCC_Init - Initialize the 1-wire device
-#
-# Parameter hash = hash of bus master
+# Init - Initialize the 1-wire device
 #
 # Return 1 : OK
 #        0 : not OK
@@ -281,9 +298,82 @@ sub Init () {
   }
 }
 
+
+########################################################################################
+# 
+# Reset - Reset the 1-Wire bus 
+#
+# Return 1 : OK
+#        0 : not OK
+#
+########################################################################################
+
+sub Reset () { 
+  my ($self) = @_;
+  my $hash = $self->{hash};
+  
+  #-- get the interface
+  my $hwdevice  = $hash->{HWDEVICE};
+  
+  my $ob = main::CallFn($hwdevice->{NAME}, "GetFn", $hwdevice, (" ", "raw", "ORb"));
+  
+  if( substr($ob,9,4) eq "OK:1" ){
+    return 1;
+  }else{
+    return 0
+  }
+}
+
 ########################################################################################
 #
-# OWX_CCC_ReadAnswer - Replacement for CUL_ReadAnswer for better control
+# Verify - Verify a particular device on the 1-Wire bus
+#
+# Parameter dev =  8 Byte ROM ID of device to be tested
+#
+# Return 1 : device found
+#        0 : device not
+#
+########################################################################################
+
+sub Verify ($) {
+  my ($self,$dev) = @_;
+  my $hash = $self->{hash};
+  
+  my $i;
+    
+  #-- get the interface
+  my $hwdevice  = $hash->{HWDEVICE};
+  
+  #-- Ask the COC/CUNO 
+  main::CUL_SimpleWrite($hwdevice, "OCf");
+  #-- sleeping for some time
+  select(undef,undef,undef,3);
+  main::CUL_SimpleWrite($hwdevice, "Oc");
+  select(undef,undef,undef,0.5);
+  my ($err,$ob) = $self->($hwdevice);
+  if( $ob ){
+    foreach my $dx (split(/\n/,$ob)){
+      next if ($dx !~ /^\d\d?\:[0-9a-fA-F]{16}/);
+      $dx =~ s/\d+\://;
+      my $ddx = substr($dx,14,2).".";
+      #-- reverse data from culfw
+      for( my $i=1;$i<7;$i++){
+        $ddx .= substr($dx,14-2*$i,2);
+      }
+      $ddx .= ".".substr($dx,0,2);
+      return 1 if( $dev eq $ddx);
+    }
+  }
+  return 0;
+} 
+
+#######################################################################################
+#
+# Private methods 
+#
+########################################################################################
+#
+# CCC_ReadAnswer - Replacement for CUL_ReadAnswer for better control
 # 
 # Parameter: hash = hash of bus master 
 #
@@ -291,8 +381,7 @@ sub Init () {
 #
 ########################################################################################
 
-sub
-CCC_ReadAnswer($)
+sub CCC_ReadAnswer($)
 {
   my ($hwdevice) = @_;
   
@@ -343,7 +432,7 @@ CCC_ReadAnswer($)
 
 ########################################################################################
 #
-# OWX_CCC_Receive - Read data from the 1-Wire bus
+# CCC_Receive - Read data from the 1-Wire bus
 # 
 # Parameter: hash = hash of bus master, numread = number of bytes to read
 #
@@ -406,36 +495,9 @@ sub CCC_Receive ($) {
   return($res);
 }
 
-########################################################################################
-# 
-# OWX_CCC_Reset - Reset the 1-Wire bus 
-#
-# Parameter hash = hash of bus master
-#
-# Return 1 : OK
-#        0 : not OK
-#
-########################################################################################
-
-sub Reset () { 
-  my ($self) = @_;
-  my $hash = $self->{hash};
-  
-  #-- get the interface
-  my $hwdevice  = $hash->{HWDEVICE};
-  
-  my $ob = main::CallFn($hwdevice->{NAME}, "GetFn", $hwdevice, (" ", "raw", "ORb"));
-  
-  if( substr($ob,9,4) eq "OK:1" ){
-    return 1;
-  }else{
-    return 0
-  }
-}
-
 #########################################################################################
 # 
-# OWX_CCC_Send - Send data block  
+# CCC_Send - Send data block  
 #
 # Parameter hash = hash of bus master, data = string to send
 #
@@ -465,48 +527,5 @@ sub CCC_Send ($) {
   main::Log(3,"OWX: Send to COC/CUNO $res2")
      if( $main::owx_debug > 1);
 }
-
-########################################################################################
-#
-# OWX_CCC_Verify - Verify a particular device on the 1-Wire bus
-#
-# Parameter hash = hash of bus master, dev =  8 Byte ROM ID of device to be tested
-#
-# Return 1 : device found
-#        0 : device not
-#
-########################################################################################
-
-sub Verify ($) {
-  my ($self,$dev) = @_;
-  my $hash = $self->{hash};
-  
-  my $i;
-    
-  #-- get the interface
-  my $hwdevice  = $hash->{HWDEVICE};
-  
-  #-- Ask the COC/CUNO 
-  main::CUL_SimpleWrite($hwdevice, "OCf");
-  #-- sleeping for some time
-  select(undef,undef,undef,3);
-  main::CUL_SimpleWrite($hwdevice, "Oc");
-  select(undef,undef,undef,0.5);
-  my ($err,$ob) = $self->($hwdevice);
-  if( $ob ){
-    foreach my $dx (split(/\n/,$ob)){
-      next if ($dx !~ /^\d\d?\:[0-9a-fA-F]{16}/);
-      $dx =~ s/\d+\://;
-      my $ddx = substr($dx,14,2).".";
-      #-- reverse data from culfw
-      for( my $i=1;$i<7;$i++){
-        $ddx .= substr($dx,14-2*$i,2);
-      }
-      $ddx .= ".".substr($dx,0,2);
-      return 1 if( $dev eq $ddx);
-    }
-  }
-  return 0;
-} 
 
 1;
