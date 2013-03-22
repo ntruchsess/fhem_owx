@@ -400,7 +400,7 @@ sub Search ($) {
     return 0;
   }
   #--check if we really found a device
-  if( OWX_CRC(0)!= 0){  # TODO: pass $self->{ROM_ID}
+  if( OWX_CRC($self->{ROM_ID})!= 0){
   #-- reset the search
     Log(1, "OWX: Search CRC failed ");
     $self->{LastDiscrepancy} = 0;

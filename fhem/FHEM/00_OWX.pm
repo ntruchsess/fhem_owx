@@ -97,8 +97,6 @@ my %attrs = (
 #-- some globals needed for the 1-Wire module
 #-- Debugging 0,1,2,3
 my $owx_debug=0;
-#-- 8 byte 1-Wire device address
-my @owx_ROM_ID  =(0,0,0,0 ,0,0,0,0); 
 
 ########################################################################################
 #
@@ -286,7 +284,7 @@ sub OWX_Complex ($$$$) {
 #
 # OWX_CRC - Check the CRC8 code of a device address in @owx_ROM_ID
 #
-# Parameter romid = if not zero, return the CRC8 value instead of checking it
+# Parameter romid = if not reference to array, return the CRC8 value instead of checking it
 #
 ########################################################################################
 
@@ -313,7 +311,9 @@ sub OWX_CRC ($) {
   my ($romid) = @_;
   my $crc8=0;  
 
-  if( $romid eq "0" ){  
+  my @owx_ROM_ID;
+  if( ref ($romid) eq 'ARRAY' ){
+  	@owx_ROM_ID = @$romid;  
     for(my $i=0; $i<8; $i++){
       $crc8 = $crc8_table[ $crc8 ^ $owx_ROM_ID[$i] ];
     }  
