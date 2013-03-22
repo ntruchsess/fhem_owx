@@ -7,6 +7,8 @@
 # Prof. Dr. Peter A. Henning
 # Norbert Truchsess
 #
+# Contributions from: Martin Fischer, Rudolf König, Boris Neubert, Joachim Herold, 
+#
 # $Id: 11_OWX.pm 3.19 2013-03 - pahenning $
 #
 ########################################################################################

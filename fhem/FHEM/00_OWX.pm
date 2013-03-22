@@ -10,9 +10,9 @@
 # * via an Arduino running OneWireFirmata attached to USB
 #
 # Prof. Dr. Peter A. Henning
+# Norbert Truchsess
 #
 # Contributions from: Martin Fischer, Rudolf König, Boris Neubert, Joachim Herold, 
-#                     Norbert Truchsess
 #
 # $Id: 00_OWX.pm 3.19 2013-03 - pahenning $
 #
