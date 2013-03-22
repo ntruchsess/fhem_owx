@@ -27,7 +27,6 @@ package OWX_FRM;
 use strict;
 use warnings;
 
-use vars qw{$owx_debug};
 use Device::Firmata::Constants qw/ :all /;
 
 sub new($) {

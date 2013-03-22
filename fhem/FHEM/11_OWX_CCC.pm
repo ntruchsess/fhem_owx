@@ -37,8 +37,6 @@ package OWX_CCC;
 use strict;
 use warnings;
 
-use vars qw{$owx_debug};
-
 sub new($) {
 	my ($class,$hash) = @_;
 
@@ -179,7 +177,7 @@ sub Complex ($$$) {
     }
     $select=sprintf("Om%s%s%s%s%s%s%s%s",@rom_id); 
     main::Log(3,"OWX: Sending match ROM to COC/CUNO ".$select)
-       if( $owx_debug > 1);
+       if( $main::owx_debug > 1);
     #--
     main::CUL_SimpleWrite($hwdevice, $select);
     my ($err,$ob) = CCC_ReadAnswer($hwdevice);
@@ -196,11 +194,11 @@ sub Complex ($$$) {
   if( $numread > 0 ){
     #$numread += length($data);
     main::Log(3,"COC/CUNO is expected to deliver $numread bytes")
-      if( $owx_debug > 1);
+      if( $main::owx_debug > 1);
     $res.=$self->CCC_Receive($numread);
   }
   main::Log(3,"OWX: returned from COC/CUNO $res")
-    if( $owx_debug > 1);
+    if( $main::owx_debug > 1);
   return $res;
 }
 
@@ -401,7 +399,7 @@ sub CCC_Receive ($) {
     } 
   }
   main::Log(3, "OWX: Received $numread bytes = $res2 on bus ".$hwdevice->{NAME})
-     if( $owx_debug > 1);
+     if( $main::owx_debug > 1);
   
   return($res);
 }
@@ -463,7 +461,7 @@ sub CCC_Send ($) {
     main::CUL_SimpleWrite($hwdevice, $res);
   } 
   main::Log(3,"OWX: Send to COC/CUNO $res2")
-     if( $owx_debug > 1);
+     if( $main::owx_debug > 1);
 }
 
 ########################################################################################

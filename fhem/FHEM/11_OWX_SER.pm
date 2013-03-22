@@ -37,8 +37,6 @@ package OWX_SER;
 use strict;
 use warnings;
 
-use vars qw{$owx_debug};
-
 sub new($) {
 	my ($class,$hash) = @_;
 	
@@ -234,7 +232,7 @@ sub Complex ($$$) {
   }
   
   #-- for debugging
-  if( $owx_debug > 1){
+  if( $main::owx_debug > 1){
     $res2 = "OWX_SER_Complex: Sending out ";
     for($i=0;$i<length($select);$i++){  
       $j=int(ord(substr($select,$i,1))/16);
@@ -250,7 +248,7 @@ sub Complex ($$$) {
   }
   
   #-- for debugging
-  if( $owx_debug > 1){
+  if( $main::owx_debug > 1){
     $res2 = "OWX_SER_Complex: Receiving   ";
     for($i=0;$i<length($res);$i++){  
       $j=int(ord(substr($res,$i,1))/16);
@@ -625,7 +623,7 @@ sub Query_2480 ($$) {
   $hwdevice->baudrate($self->{baud});
   $hwdevice->write_settings;
 
-  if( $owx_debug > 2){
+  if( $main::owx_debug > 2){
     my $res = "OWX: Sending out        ";
     for($i=0;$i<length($cmd);$i++){  
       $j=int(ord(substr($cmd,$i,1))/16);
@@ -638,9 +636,9 @@ sub Query_2480 ($$) {
   my $count_out = $hwdevice->write($cmd);
   
   if( !($count_out)){
-    main::Log(3,"OWX_Query_2480: No return value after writing") if( $owx_debug > 0);
+    main::Log(3,"OWX_Query_2480: No return value after writing") if( $main::owx_debug > 0);
   } else {
-    main::Log(3, "OWX_Query_2480: Write incomplete $count_out ne ".(length($cmd))."") if ( ($count_out != length($cmd)) & ($owx_debug > 0));
+    main::Log(3, "OWX_Query_2480: Write incomplete $count_out ne ".(length($cmd))."") if ( ($count_out != length($cmd)) & ($main::owx_debug > 0));
   }
   #-- sleeping for some time
   select(undef,undef,undef,0.04);
@@ -652,14 +650,14 @@ sub Query_2480 ($$) {
     $string_in .= $string_part;                            
     $m = $count_in;		
   	$n++;
- 	if( $owx_debug > 2){
+ 	if( $main::owx_debug > 2){
  	  main::Log(3, "Schleifendurchlauf $n");
  	  }
  	if ($n > 100) {                                       
 	  $m = $retlen;                                         
 	}
 	select(undef,undef,undef,0.02);	                      
-    if( $owx_debug > 2){	
+    if( $main::owx_debug > 2){	
       my $res = "OWX: Receiving in loop no. $n ";
       for($i=0;$i<$count_in;$i++){ 
 	    $j=int(ord(substr($string_part,$i,1))/16);
@@ -929,7 +927,7 @@ sub Query_9097 ($) {
   $hwdevice->baudrate($self->{baud});
   $hwdevice->write_settings;
   
-  if( $owx_debug > 2){
+  if( $main::owx_debug > 2){
     my $res = "OWX: Sending out ";
     for($i=0;$i<length($cmd);$i++){  
       $j=int(ord(substr($cmd,$i,1))/16);
@@ -948,7 +946,7 @@ sub Query_9097 ($) {
   #-- read the data
   my ($count_in, $string_in) = $hwdevice->read(48);
     
-  if( $owx_debug > 2){
+  if( $main::owx_debug > 2){
     my $res = "OWX: Receiving ";
     for($i=0;$i<$count_in;$i++){  
       $j=int(ord(substr($string_in,$i,1))/16);
