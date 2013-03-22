@@ -172,14 +172,15 @@ sub OWX_Define ($$) {
     $owx = OWX_FRM->new($hash);
   }
 
-  if ($owx) {
-  	my $ret = $owx->Define($def);
-  	return $ret if $ret;  
+  return "OWX_Define failed: unable to identify interface type" if (!$owx); 
+  
+  my $ret = $owx->Define($def);
+  return $ret if $ret;  #cancel definition of OWX if interface define failes with error-message.
   	
-  	$hash->{OWX} = $owx;
+  $hash->{OWX} = $owx;
   	
-  	return OWX_Init($hash);
-  }
+  $ret = OWX_Init($hash);  #continue definition of OWX if interface define was ok, but init failed. (init may be called again after reconnect to busmaster)
+  Log (GetLogLevel($hash->{NAME},2),"error initializing ".$hash->{NAME}.": ".$ret) if ($ret);
   return undef;
 }
 
@@ -686,7 +687,7 @@ sub OWX_Init ($) {
       $hash->{PRESENT} = 0;
       readingsSingleUpdate($hash,"state","failed",1);
       $init_done = 1; 
-      return "OWX_Init failed";
+      return "OWX_Detect failed";
     }
   	my $ret = $owx->Init();
   	return $ret if ($ret);
