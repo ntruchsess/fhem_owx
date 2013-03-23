@@ -180,9 +180,9 @@ sub OWX_Define ($$) {
   #--check if we have a directly connected serial interface attached
   if ( $dev =~ m|$owgdevregexp|i){  
     require "$attr{global}{modpath}/FHEM/11_OWX_SER.pm";
-    Log 1,"Having loaded $attr{global}{modpath}/FHEM/11_OWX_SER.pm";
     $owx = OWX_SER->new($hash);
   #-- check if we have a COC/CUNO interface attached  
+  #   TODO: Need to improve this
   }elsif( $dev =~ /CUNO/ ){
     require "$attr{global}{modpath}/FHEM/11_OWX_CCC.pm";
     $owx = OWX_CCC->new($hash);
