@@ -93,7 +93,7 @@ use vars qw{%owfamily %gets %sets};
   "29"  => ("DS2408","OWSWITCH DS2408"),
   "3A"  => ("DS2413","OWSWITCH DS2413"),
   "3B"  => ("DS1825","OWID"),
-  "81"  => ("DS1420","OWID")
+  "81"  => ("DS1420","OWID"),
   "FF"  => ("LCD","OWLCD")
 );
 
@@ -468,11 +468,11 @@ sub OWX_CRC16 ($$$) {
 
 sub OWX_Discover ($) {
   my ($hash) = @_;
+  my $name = $hash->{NAME};
+  
   my $res;
   my $ret= "";
-  my $name = $hash->{NAME};
-  my $exname;
-  my $acname;
+  my ($chip,$acstring,$acname,$exname);
   
   #-- get the interface
   my $owx = $hash->{OWX};
@@ -539,7 +539,6 @@ sub OWX_Discover ($) {
     }
  
     #-- Determine the device type
-    my ($chip,$acstring);
     if(exists $owfamily{$owx_f) {
       $chip     = $owfamily{$owx_f}[0];
       $acstring = $owfamily{$owx_f}[1];
@@ -560,7 +559,7 @@ sub OWX_Discover ($) {
     #foreach my $d (keys %defs) {
     #next if($defs{$d}{TYPE} ne "autocreate");
     #return undef if(AttrVal($defs{$d}{NAME},"disable",undef));
-      my $acname = sprintf "OWX_%s_%s",$owx_f,$owx_rnf;
+      $acname = sprintf "OWX_%s_%s",$owx_f,$owx_rnf;
       #Log 1, "to define $acname $acstring $owx_rnf";
       $res = CommandDefine(undef,"$acname $acstring $owx_rnf");
       if($res) {
