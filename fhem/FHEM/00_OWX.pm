@@ -74,7 +74,7 @@ if( $^O =~ /Win/ ) {
 require "$attr{global}{modpath}/FHEM/DevIo.pm";
 sub Log($$);
 
-use vars qw{%owfamily %gets %sets};
+use vars qw{%owfamily %gets %sets $owx_version $owx_debug};
 # 1-Wire devices 
 # http://owfs.sourceforge.net/family.html
 %owfamily = (
@@ -98,14 +98,14 @@ use vars qw{%owfamily %gets %sets};
 );
 
 #-- These we may get on request
-my %gets = (
+%gets = (
    "alarms"  => "A",
    "devices" => "D",
    "version" => "V"
 );
 
 #-- These occur in a pulldown menu as settable values for the bus master
-my %sets = (
+%sets = (
    "interval" => "T",
    "followAlarms" => "F"
 );
@@ -115,9 +115,9 @@ my %attrs = (
 );
 
 #-- some globals needed for the 1-Wire module
-my $owx_version=4.0;
+$owx_version=4.0;
 #-- Debugging 0,1,2,3
-my $owx_debug=0;
+$owx_debug=0;
 
 ########################################################################################
 #
