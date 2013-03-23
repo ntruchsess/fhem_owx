@@ -6,7 +6,7 @@
 #
 # Prof. Dr. Peter A. Henning
 #
-# $Id: 21_OWID.pm 3.19 2013-01 - pahenning $
+# $Id: 21_OWID.pm 2013-01 - pahenning $
 #
 ########################################################################################
 #
@@ -24,6 +24,7 @@
 #
 # get <name> id       => FAM_ID.ROM_ID.CRC 
 # get <name> present  => 1 if device present, 0 if not
+# get <name> version  => OWX version number
 #
 #
 ########################################################################################
@@ -51,11 +52,13 @@ use strict;
 use warnings;
 sub Log($$);
 
+my $owx_version="3.21";
 #-- declare variables
 my %gets = (
   "present"     => "",
   "interval"    => "",
-  "id"          => ""
+  "id"          => "",
+  "version"     => ""
 );
 my %sets    = (
   "interval"    => ""
@@ -224,7 +227,7 @@ sub OWID_Get($@) {
      return "$name.id => $value";
   } 
   
-   #-- get interval
+  #-- get interval
   if($a[1] eq "interval") {
     $value = $hash->{INTERVAL};
      return "$name.interval => $value";
@@ -243,6 +246,12 @@ sub OWID_Get($@) {
     }
     return "$name.present => $value";
   } 
+  
+  #-- get version
+  if( $a[1] eq "version") {
+    return "$name.version => $owx_version";
+  }
+  
 }
 
 
