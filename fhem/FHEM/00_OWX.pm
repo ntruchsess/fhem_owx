@@ -473,6 +473,10 @@ sub OWX_Discover ($) {
   my $res;
   my $ret= "";
   my ($chip,$acstring,$acname,$exname);
+  my $owx_rnf;
+  my $owx_f;
+  my $owx_crc;
+  my $id_owx;
   
   #-- get the interface
   my $owx = $hash->{OWX};
@@ -500,10 +504,10 @@ sub OWX_Discover ($) {
     }
     
     #-- three pieces of the ROM ID found on the bus
-    my $owx_rnf = substr($owx_dev,3,12);
-    my $owx_f   = substr($owx_dev,0,2);
-    my $owx_crc = substr($owx_dev,15,3);
-    my $id_owx  = $owx_f.".".$owx_rnf;
+    $owx_rnf = substr($owx_dev,3,12);
+    $owx_f   = substr($owx_dev,0,2);
+    $owx_crc = substr($owx_dev,15,3);
+    $id_owx  = $owx_f.".".$owx_rnf;
       
     my $match = 0;
     
@@ -539,13 +543,12 @@ sub OWX_Discover ($) {
     }
  
     #-- Determine the device type
-    if(exists $owfamily{$owx_f) {
+    if(exists $owfamily{$owx_f}) {
       $chip     = $owfamily{$owx_f}[0];
       $acstring = $owfamily{$owx_f}[1];
     }else{  
       Log 2, "OWX: Unknown family code '$owx_f' found";
       #-- All unknown families are ID only
-    } else {
       $chip     = "unknown";
       $acstring = "OWID $owx_f";  
     }
