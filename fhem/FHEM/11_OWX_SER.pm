@@ -76,14 +76,15 @@ sub Define ($) {
 
 	#-- check syntax
 	if(int(@a) < 3){
-		return "OWX_SER: Syntax error - must be define <name> OWX"
+		return "OWX_SER: Syntax error - must be define <name> OWX <serial-device>"
 	}
-	#-- If this line contains 3 parameters, it is the bus master definition
 	my $dev = $a[2];
+    
     #-- when the specified device name contains @<digits> already, use it as supplied
     if ( $dev !~ m/\@\d*/ ){
       $hash->{DeviceName} = $dev."\@9600";
     }
+    
     #-- Second step in case of serial device: open the serial device to test it
     my $msg = "OWX_SER: Serial device $dev";
     my $ret = main::DevIo_OpenDev($hash,0,undef);
@@ -121,7 +122,7 @@ sub Detect () {
   
   my ($i,$j,$k,$l,$res,$ret,$ress);
   my $name = $hash->{NAME};
-  my $ress0 = "OWX_SER: 1-Wire bus $name: interface ";
+  my $ress0 = "OWX_SER::Detect 1-Wire bus $name: interface ";
   $ress     = $ress0;
 
   my $interface;
@@ -256,7 +257,7 @@ sub Complex ($$$) {
   
   #-- for debugging
   if( $main::owx_debug > 1){
-    $res2 = "OWX_SER_Complex: Sending out ";
+    $res2 = "OWX_SER::Complex: Sending out ";
     for($i=0;$i<length($select);$i++){  
       $j=int(ord(substr($select,$i,1))/16);
       $k=ord(substr($select,$i,1))%16;
@@ -272,7 +273,7 @@ sub Complex ($$$) {
   
   #-- for debugging
   if( $main::owx_debug > 1){
-    $res2 = "OWX_SER_Complex: Receiving   ";
+    $res2 = "OWX_SER::Complex: Receiving   ";
     for($i=0;$i<length($res);$i++){  
       $j=int(ord(substr($res,$i,1))/16);
       $k=ord(substr($res,$i,1))%16;
@@ -461,7 +462,7 @@ sub Search ($) {
   #-- 1-Wire reset
   if ($self->Reset()==0){
     #-- reset the search
-    main::Log(1, "OWX_SER: Search reset failed");
+    main::Log(1, "OWX_SER::Search reset failed");
     $self->{LastDiscrepancy} = 0;
     $self->{LastDeviceFlag} = 0;
     $self->{LastFamilyDiscrepancy} = 0;
@@ -474,13 +475,13 @@ sub Search ($) {
   }elsif( $interface eq "DS9097" ){
     $self->Search_9097($mode);
   }else{
-    main::Log(1,"OWX_SER: Search called with unknown interface ".$interface);
+    main::Log(1,"OWX_SER::Search called with unknown interface ".$interface);
     return 0;
   }
   #--check if we really found a device
   if( main::OWX_CRC($self->{ROM_ID})!= 0){
   #-- reset the search
-    main::Log(1, "OWX_SER: Search CRC failed ");
+    main::Log(1, "OWX_SER::Search CRC failed ");
     $self->{LastDiscrepancy} = 0;
     $self->{LastDeviceFlag} = 0;
     $self->{LastFamilyDiscrepancy} = 0;
@@ -501,7 +502,7 @@ sub Search ($) {
     
   #-- mode was to verify presence of a device
   if ($mode eq "verify") {
-    main::Log(5, "OWX_SER: Device verified $dev");
+    main::Log(5, "OWX_SER::Search: device verified $dev");
     return 1;
   #-- mode was to discover devices
   } elsif( $mode eq "discover" ){
@@ -525,7 +526,7 @@ sub Search ($) {
     if( $self->{LastDeviceFlag}!=1 ){
       #-- push to list
       push(@{$hash->{DEVS}},$dev);
-      main::Log(5, "OWX_SER: New device found $dev");
+      main::Log(5, "OWX_SER::Search: new device found $dev");
     }  
     return 1;
     
@@ -541,7 +542,7 @@ sub Search ($) {
     if( $self->{LastDeviceFlag}!=1 ){
     #--push to list
       push(@{$hash->{ALARMDEVS}},$dev);
-      main::Log(5, "OWX_SER: New alarm device found $dev");
+      main::Log(5, "OWX_SER::Search: new alarm device found $dev");
     }  
     return 1;
   }
@@ -665,7 +666,7 @@ sub Query_2480 ($$) {
   $hwdevice->write_settings;
 
   if( $main::owx_debug > 2){
-    my $res = "OWX_SER: Sending out        ";
+    my $res = "OWX_SER::Query_2480 Sending out        ";
     for($i=0;$i<length($cmd);$i++){  
       $j=int(ord(substr($cmd,$i,1))/16);
       $k=ord(substr($cmd,$i,1))%16;
@@ -677,9 +678,9 @@ sub Query_2480 ($$) {
   my $count_out = $hwdevice->write($cmd);
   
   if( !($count_out)){
-    main::Log(3,"OWX_Query_2480: No return value after writing") if( $main::owx_debug > 0);
+    main::Log(3,"OWX_SER::Query_2480: No return value after writing") if( $main::owx_debug > 0);
   } else {
-    main::Log(3, "OWX_Query_2480: Write incomplete $count_out ne ".(length($cmd))."") if ( ($count_out != length($cmd)) & ($main::owx_debug > 0));
+    main::Log(3, "OWX_SER::Query_2480: Write incomplete $count_out ne ".(length($cmd))."") if ( ($count_out != length($cmd)) & ($main::owx_debug > 0));
   }
   #-- sleeping for some time
   select(undef,undef,undef,0.04);
@@ -692,14 +693,14 @@ sub Query_2480 ($$) {
     $m = $count_in;		
   	$n++;
  	if( $main::owx_debug > 2){
- 	  main::Log(3, "Schleifendurchlauf $n");
+ 	  main::Log(3, "OWX_SER::Query_2480: Loop no. $n");
  	  }
  	if ($n > 100) {                                       
 	  $m = $retlen;                                         
 	}
 	select(undef,undef,undef,0.02);	                      
     if( $main::owx_debug > 2){	
-      my $res = "OWX_SER: Receiving in loop no. $n ";
+      my $res = "OWX_SER::Query_2480 Receiving in loop no. $n ";
       for($i=0;$i<$count_in;$i++){ 
 	    $j=int(ord(substr($string_part,$i,1))/16);
         $k=ord(substr($string_part,$i,1))%16;
@@ -752,7 +753,7 @@ sub Reset_2480 () {
   #-- process result
   $r1  = ord(substr($res,0,1)) & 192;
   if( $r1 != 192){
-    main::Log(3, "OWX_SER: Reset failure on bus $name");
+    main::Log(3, "OWX_SER::Reset_2480 failure on bus $name");
     return 0;
   }
   $hash->{ALARMED} = "no";
@@ -763,7 +764,7 @@ sub Reset_2480 () {
     #Log(3, "OWX_SER: No presence detected";
     return 1;
   }elsif( $r2 ==2 ){
-    main::Log(1, "OWX_SER: Alarm presence detected on bus $name");
+    main::Log(1, "OWX_SER::Reset_2480 Alarm presence detected on bus $name");
     $hash->{ALARMED} = "yes";
   }
   return 1;
@@ -833,7 +834,7 @@ sub Search_2480 ($) {
      
   #-- interpret the return data
   if( length($response)!=16 ) {
-    main::Log(3, "OWX_SER: Search 2nd return has wrong parameter with length = ".length($response)."");
+    main::Log(3, "OWX_SER::Search_2480 2nd return has wrong parameter with length = ".length($response)."");
     return 0;
   }
   #-- Response search data parsing (Fig. 11 of Maxim AN192)
@@ -911,10 +912,10 @@ sub WriteBytePower_2480 ($) {
   my $res = $self->Query($cmd);
   #-- process result
   if( $res eq $ret ){
-    main::Log(5, "OWX_SER: WriteBytePower OK");
+    main::Log(5, "OWX_SER::WriteBytePower OK");
     return 1;
   } else {
-    main::Log(3, "OWX_SER: WriteBytePower failure");
+    main::Log(3, "OWX_SER::WriteBytePower failure");
     return 0;
   }
 }
@@ -969,7 +970,7 @@ sub Query_9097 ($) {
   $hwdevice->write_settings;
   
   if( $main::owx_debug > 2){
-    my $res = "OWX_SER: Sending out ";
+    my $res = "OWX_SER::Query_9097 Sending out ";
     for($i=0;$i<length($cmd);$i++){  
       $j=int(ord(substr($cmd,$i,1))/16);
       $k=ord(substr($cmd,$i,1))%16;
@@ -980,7 +981,7 @@ sub Query_9097 ($) {
 	
   my $count_out = $hwdevice->write($cmd);
 
-  main::Log(1, "OWX_SER: Write incomplete $count_out ne ".(length($cmd))."") if ( $count_out != length($cmd) );
+  main::Log(1, "OWX_SER::Query_9097 Write incomplete $count_out ne ".(length($cmd))."") if ( $count_out != length($cmd) );
   #-- sleeping for some time
   select(undef,undef,undef,0.01);
  
@@ -988,7 +989,7 @@ sub Query_9097 ($) {
   my ($count_in, $string_in) = $hwdevice->read(48);
     
   if( $main::owx_debug > 2){
-    my $res = "OWX_SER: Receiving ";
+    my $res = "OWX_SER::Query_9097 Receiving ";
     for($i=0;$i<$count_in;$i++){  
       $j=int(ord(substr($string_in,$i,1))/16);
       $k=ord(substr($string_in,$i,1))%16;

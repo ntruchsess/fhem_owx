@@ -62,38 +62,38 @@ use strict;
 use warnings;
 
 #-- unfortunately some things OS-dependent
-my $owgdevregexp;
+my $SER_regexp;
 if( $^O =~ /Win/ ) {
   require Win32::SerialPort;
-  $owgdevregexp= "com";
+  $SER_regexp= "com";
 } else {
   require Device::SerialPort;
-  $owgdevregexp= "/dev/";
+  $SER_regexp= "/dev/";
 } 
 
 require "$attr{global}{modpath}/FHEM/DevIo.pm";
 sub Log($$);
 
-use vars qw{%owfamily %gets %sets $owx_version $owx_debug};
+use vars qw{%owg_family %gets %sets $owx_version $owx_debug};
 # 1-Wire devices 
 # http://owfs.sourceforge.net/family.html
-%owfamily = (
-  "01"  => ["DS2401/DS1990A","OWID"],
-  "05"  => ["DS2405","OWID"],
+%owg_family = (
+  "01"  => ["DS2401/DS1990A","OWID DS2401"],
+  "05"  => ["DS2405","OWID 05"],
   "10"  => ["DS18S20/DS1920","OWTHERM DS1820"],
   "12"  => ["DS2406/DS2507","OWSWITCH DS2406"],
-  "1B"  => ["DS2436","OWID"],
-  "1D"  => ["DS2436","OWID"],
+  "1B"  => ["DS2436","OWID 1B"],
+  "1D"  => ["DS2423","OWCOUNT DS2423"],
   "20"  => ["DS2450","OWAD DS2450"],
   "22"  => ["DS1822","OWTHERM DS1822"],
-  "24"  => ["DS2415/DS1904","OWID"],
+  "24"  => ["DS2415/DS1904","OWID 24"],
   "26"  => ["DS2438","OWMULTI DS2438"],
-  "27"  => ["DS2417","OWID"],
+  "27"  => ["DS2417","OWID 27"],
   "28"  => ["DS18B20","OWTHERM DS18B20"],
   "29"  => ["DS2408","OWSWITCH DS2408"],
   "3A"  => ["DS2413","OWSWITCH DS2413"],
-  "3B"  => ["DS1825","OWID"],
-  "81"  => ["DS1420","OWID"],
+  "3B"  => ["DS1825","OWID 3B"],
+  "81"  => ["DS1420","OWID 81"],
   "FF"  => ["LCD","OWLCD"]
 );
 
@@ -106,7 +106,7 @@ use vars qw{%owfamily %gets %sets $owx_version $owx_debug};
 
 #-- These occur in a pulldown menu as settable values for the bus master
 %sets = (
-   "interval" => "T",
+   "interval"     => "T",
    "followAlarms" => "F"
 );
 
@@ -161,13 +161,11 @@ sub OWX_Define ($$) {
   
   #-- check syntax
   if(int(@a) < 3){
-    return "OWX: Syntax error - must be define <name> OWX"
+    return "OWX: Syntax error - must be define <name> OWX <serial-device>|<cuno/coc-device>|<arduino-pin>"
   }
-  
-  #-- check syntax
+
   Log 1,"OWX: Warning - Some parameter(s) ignored, must be define <name> OWX <serial-device>|<cuno/coc-device>|<arduino-pin>"
-     if(int(@a) > 3);
-  #-- If this line contains 3 parameters, it is the bus master definition
+    if( int(@a)>3 );
   my $dev = $a[2];
   
   #-- Dummy 1-Wire ROM identifier, empty device lists
@@ -176,31 +174,33 @@ sub OWX_Define ($$) {
   $hash->{ALARMDEVS}   = ();
   
   my $owx;
-  #-- First step
-  #--check if we have a directly connected serial interface attached
-  if ( $dev =~ m|$owgdevregexp|i){  
+  #-- First step - different methods
+  #-- check if we have a serial device attached
+  if ( $dev =~ m|$SER_regexp|i){  
     require "$attr{global}{modpath}/FHEM/11_OWX_SER.pm";
     $owx = OWX_SER->new($hash);
   #-- check if we have a COC/CUNO interface attached  
-  #   TODO: Need to improve this
-  }elsif( $dev =~ /CUNO/ ){
+  }elsif( (defined( $defs{$dev}->{VERSION} ) ? $defs{$dev}->{VERSION} : "") =~ m/CSM|CUNO/ ){
     require "$attr{global}{modpath}/FHEM/11_OWX_CCC.pm";
     $owx = OWX_CCC->new($hash);
   #-- check if we are connecting to Arduino (via FRM):
   } elsif ($dev =~ /^\d{1,2}$/) {
   	require "$attr{global}{modpath}/FHEM/11_OWX_FRM.pm";
     $owx = OWX_FRM->new($hash);
-  }
-
-  return "OWX_Define failed: unable to identify interface type" if (!$owx); 
+  } else {
+    return "OWX: Define failed, unable to identify interface type $dev"
+  };
   
   my $ret = $owx->Define($def);
-  return $ret if $ret;  #cancel definition of OWX if interface define failes with error-message.
+  #-- cancel definition of OWX if interface define fails 
+  return $ret if $ret;  
   	
   $hash->{OWX} = $owx;
-  	
-  $ret = OWX_Init($hash);  #continue definition of OWX if interface define was ok, but init failed. (init may be called again after reconnect to busmaster)
-  Log (GetLogLevel($hash->{NAME},2),"error initializing ".$hash->{NAME}.": ".$ret) if ($ret);
+  
+  #-- continue definition of OWX if interface define was ok, but init failed	
+  $ret = OWX_Init($hash);  
+  Log (GetLogLevel($hash->{NAME},2),"OWX: Error initializing ".$hash->{NAME}.": ".$ret) 
+    if ($ret);
   return undef;
 }
 
@@ -546,9 +546,9 @@ sub OWX_Discover ($) {
     }
  
     #-- Determine the device type
-    if(exists $owfamily{$owx_f}) {
-      $chip     = $owfamily{$owx_f}[0];
-      $acstring = $owfamily{$owx_f}[1];
+    if(exists $owg_family{$owx_f}) {
+      $chip     = $owg_family{$owx_f}[0];
+      $acstring = $owg_family{$owx_f}[1];
     }else{  
       Log 2, "OWX: Unknown family code '$owx_f' found";
       #-- All unknown families are ID only
@@ -558,7 +558,7 @@ sub OWX_Discover ($) {
     #Log 1,"###\nfor the following device match=$match, chip=$chip name=$name acstring=$acstring";
     #-- device exists
     if( $match==1 ){
-      $ret .= sprintf("%s.%s      %-10s %s\n", $owx_f,$owx_rnf, $chip, $exname);
+      $ret .= sprintf("%s.%s      %-14s %s\n", $owx_f,$owx_rnf, $chip, $exname);
     #-- device unknown, autocreate
     }else{
     #-- example code for checking global autocreate - do we want this ?
