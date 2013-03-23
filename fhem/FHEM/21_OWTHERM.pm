@@ -6,7 +6,7 @@
 #
 # Prof. Dr. Peter A. Henning 
 #
-# $Id: 21_OWTHERM.pm 3.19 2013-02 - pahenning $
+# $Id: 21_OWTHERM.pm 2013-02 - pahenning $
 #
 # Disclaimer: No code of the former OWTEMP module is contained here
 #
@@ -29,6 +29,7 @@
 # get <name> interval    => query interval
 # get <name> temperature => temperature measurement
 # get <name> alarm       => alarm temperature settings
+# get <name> version     => OWX version number
 #
 # set <name> interval    => set period for measurement
 # set <name> tempLow     => lower alarm temperature setting 
@@ -71,6 +72,7 @@ use strict;
 use warnings;
 sub Log($$);
 
+my $owx_version="3.21";
 #-- temperature globals - always the raw values from/for the device
 my $owg_temp     = "";
 my $owg_th       = "";
@@ -85,7 +87,8 @@ my %gets = (
   "present"     => "",
   "interval"    => "",
   "temperature" => "",
-  "alarm"       => ""
+  "alarm"       => "",
+  "version"     => ""
 );
 
 my %sets = (
@@ -457,10 +460,15 @@ sub OWTHERM_Get($@) {
   } 
   
   #-- get interval
-  if($reading eq "interval") {
+  if($a[1] eq "interval") {
     $value = $hash->{INTERVAL};
      return "$name.interval => $value";
   } 
+  
+  #-- get version
+  if( $a[1] eq "version") {
+    return "$name.version => $owx_version";
+  }
   
   #-- reset presence
   $hash->{PRESENT}  = 0;
