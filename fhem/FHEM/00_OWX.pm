@@ -78,23 +78,23 @@ use vars qw{%owfamily %gets %sets};
 # 1-Wire devices 
 # http://owfs.sourceforge.net/family.html
 %owfamily = (
-  "01"  => ("DS2401/DS1990A","OWID"),
-  "05"  => ("DS2405","OWID"),
-  "10"  => ("DS18S20/DS1920","OWTHERM DS1820"),
-  "12"  => ("DS2406/DS2507","OWSWITCH DS2406"),
-  "1B"  => ("DS2436","OWID"),
-  "1D"  => ("DS2436","OWID"),
-  "20"  => ("DS2450","OWAD DS2450"),
-  "22"  => ("DS1822","OWTHERM DS1822"),
-  "24"  => ("DS2415/DS1904","OWID"),
-  "26"  => ("DS2438","OWMULTI DS2438"),
-  "27"  => ("DS2417","OWID"),
-  "28"  => ("DS18B20","OWTHERM DS18B20"),
-  "29"  => ("DS2408","OWSWITCH DS2408"),
-  "3A"  => ("DS2413","OWSWITCH DS2413"),
-  "3B"  => ("DS1825","OWID"),
-  "81"  => ("DS1420","OWID"),
-  "FF"  => ("LCD","OWLCD")
+  "01"  => ["DS2401/DS1990A","OWID"],
+  "05"  => ["DS2405","OWID"],
+  "10"  => ["DS18S20/DS1920","OWTHERM DS1820"],
+  "12"  => ["DS2406/DS2507","OWSWITCH DS2406"],
+  "1B"  => ["DS2436","OWID"],
+  "1D"  => ["DS2436","OWID"],
+  "20"  => ["DS2450","OWAD DS2450"],
+  "22"  => ["DS1822","OWTHERM DS1822"],
+  "24"  => ["DS2415/DS1904","OWID"],
+  "26"  => ["DS2438","OWMULTI DS2438"],
+  "27"  => ["DS2417","OWID"],
+  "28"  => ["DS18B20","OWTHERM DS18B20"],
+  "29"  => ["DS2408","OWSWITCH DS2408"],
+  "3A"  => ["DS2413","OWSWITCH DS2413"],
+  "3B"  => ["DS1825","OWID"],
+  "81"  => ["DS1420","OWID"],
+  "FF"  => ["LCD","OWLCD"]
 );
 
 #-- These we may get on request
@@ -176,12 +176,13 @@ sub OWX_Define ($$) {
   $hash->{ALARMDEVS}   = ();
   
   my $owx;
-  #-- First step: check if we have a directly connected serial interface attached
+  #-- First step
+  #--check if we have a directly connected serial interface attached
   if ( $dev =~ m|$owgdevregexp|i){  
     require "$attr{global}{modpath}/FHEM/11_OWX_SER.pm";
+    Log 1,"Having loaded $attr{global}{modpath}/FHEM/11_OWX_SER.pm";
     $owx = OWX_SER->new($hash);
-  #-- First step: check if we have a COC/CUNO interface attached  
-  # TODO NEED TO IMPROVE THIS  
+  #-- check if we have a COC/CUNO interface attached  
   }elsif( $dev =~ /CUNO/ ){
     require "$attr{global}{modpath}/FHEM/11_OWX_CCC.pm";
     $owx = OWX_CCC->new($hash);
@@ -473,10 +474,12 @@ sub OWX_Discover ($) {
   my $res;
   my $ret= "";
   my ($chip,$acstring,$acname,$exname);
+  my $ow_dev;
   my $owx_rnf;
   my $owx_f;
   my $owx_crc;
   my $id_owx;
+  my $match;
   
   #-- get the interface
   my $owx = $hash->{OWX};
@@ -509,7 +512,7 @@ sub OWX_Discover ($) {
     $owx_crc = substr($owx_dev,15,3);
     $id_owx  = $owx_f.".".$owx_rnf;
       
-    my $match = 0;
+    $match = 0;
     
     #-- Check against all existing devices  
     foreach my $fhem_dev (sort keys %main::defs) { 

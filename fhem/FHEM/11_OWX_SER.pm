@@ -22,15 +22,6 @@
 # Verify
 #
 ########################################################################################
-#
-# OWX_SER_Alarms - Find devices on the 1-Wire bus, 
-#              which have the alarm flag set
-#
-# Parameter hash = hash of bus master
-#
-# Return number of alarmed devices.
-#
-########################################################################################
 
 package OWX_SER;
 
@@ -202,7 +193,7 @@ sub Alarms () {
   my $hash = $self->{hash};
   
   #-- Discover all alarmed devices on the 1-Wire bus
-  my $res = $self->SER_First("alarm");
+  my $res = $self->First("alarm");
   while( $self->{LastDeviceFlag}==0 && $res != 0){
     $res = $res & $self->SER_Next("alarm");
   }
@@ -308,9 +299,9 @@ sub Discover () {
   my $hash = $self->{hash};
   
   #-- Discover all alarmed devices on the 1-Wire bus
-  my $res = $self->SER_First("discover");
+  my $res = $self->First("discover");
   while( $self->{LastDeviceFlag}==0 && $res!=0 ){
-    $res = $res & $self->SER_Next("discover"); 
+    $res = $res & $self->Next("discover"); 
   }
   return( @{$hash->{DEVS}} == 0);
 }
