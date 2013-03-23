@@ -6,15 +6,15 @@
 #
 # Norbert Truchsess
 #
-# $Id: 11_OWX_CCC.pm 3.19 2013-03 - pahenning $
+# $Id: 11_OWX_FRM.pm 2013-03 - ntruchsess $
 #
 ########################################################################################
 #
 # Provides the following methods for OWX
 #
-# Define
 # Alarms
 # Complex
+# Define
 # Discover
 # Init
 # Reset
@@ -34,6 +34,8 @@ sub new($) {
 
 	return bless {
 		hash => $hash,
+	    #-- module version
+		version => 4.0
 	}, $class;
 }
 

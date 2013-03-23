@@ -7,7 +7,7 @@
 # Prof. Dr. Peter A. Henning
 # Norbert Truchsess
 #
-# $Id: 11_OWX_CCC.pm 3.19 2013-03 - pahenning $
+# $Id: 11_OWX_CCC.pm 2013-03 - pahenning $
 #
 ########################################################################################
 #
@@ -39,6 +39,8 @@ sub new($) {
 
 	return bless {
 		hash => $hash,
+	    #-- module version
+		version => 4.0
 	}, $class;
 }
 
@@ -48,9 +50,11 @@ sub new($) {
 #
 ########################################################################################
 #
-# Define - Implements DefFn function
+# Define - Implements Define method
 # 
 # Parameter def = definition string
+#
+# Return undef if ok, otherwise error message
 #
 ########################################################################################
 
@@ -62,14 +66,14 @@ sub Define($) {
 
 	#-- check syntax
 	if(int(@a) < 3){
-		return "OWX: Syntax error - must be define <name> OWX"
+		return "OWX_CCC: Syntax error - must be define <name> OWX"
 	}
 	#-- If this line contains 3 parameters, it is the bus master definition
 	my $dev = $a[2];
 		
     $hash->{DeviceName} = $dev;
     #-- Second step in case of CUNO: See if we can open it
-    my $msg = "OWX: COC/CUNO device $dev";
+    my $msg = "OWX_CCC: COC/CUNO device $dev";
     #-- hash des COC/CUNO
     my $hwdevice = $main::defs{$dev};
     if($hwdevice){
@@ -80,10 +84,10 @@ sub Define($) {
       #-- loop for some time until the state is "Initialized"
       for(my $i=0;$i<6;$i++){
         last if( $hwdevice->{STATE} eq "Initialized");
-        main::Log(1,"OWX: Waiting, at t=$i ".$dev." is still ".$hwdevice->{STATE});
+        main::Log(1,"OWX_CCC: Waiting, at t=$i ".$dev." is still ".$hwdevice->{STATE});
         select(undef,undef,undef,3); 
       }
-      main::Log(1, "OWX: Can't open ".$dev) if( $hwdevice->{STATE} ne "Initialized");
+      main::Log(1, "OWX_CCC: Can't open ".$dev) if( $hwdevice->{STATE} ne "Initialized");
       #-- reset the 1-Wire system in COC/CUNO
       main::CUL_SimpleWrite($hwdevice, "Oi");
       return undef;
@@ -97,7 +101,7 @@ sub Define($) {
 #
 # Detect - Find out if we have the proper interface
 #
-# Return 
+# Return 1 if ok, otherwise 0
 #
 ########################################################################################
 
@@ -107,7 +111,7 @@ sub Detect () {
   
   my ($ret,$ress);
   my $name = $hash->{NAME};
-  my $ress0 = "OWX: 1-Wire bus $name: interface ";
+  my $ress0 = "OWX_CCC: 1-Wire bus $name: interface ";
   $ress     = $ress0;
 
   #-- get the interface
@@ -118,7 +122,7 @@ sub Detect () {
   #-- type of interface
   main::CUL_SimpleWrite($hwdevice, "V");
   select(undef,undef,undef,0.01);
-  my ($err,$ob) = CCC_ReadAnswer($hwdevice);
+  my ($err,$ob) = ReadAnswer($hwdevice);
   #my $ob = CallFn($owx_hwdevice->{NAME}, "GetFn", $owx_hwdevice, (" ", "raw", "V"));
   #-- process result for detection
   if( !defined($ob)){
@@ -200,18 +204,18 @@ sub Complex ($$$) {
        $rom_id[7-$i]=substr($dev,2*$i,2);
     }
     $select=sprintf("Om%s%s%s%s%s%s%s%s",@rom_id); 
-    main::Log(3,"OWX: Sending match ROM to COC/CUNO ".$select)
+    main::Log(3,"OWX_CCC: Sending match ROM to COC/CUNO ".$select)
        if( $main::owx_debug > 1);
     #--
     main::CUL_SimpleWrite($hwdevice, $select);
-    my ($err,$ob) = CCC_ReadAnswer($hwdevice);
+    my ($err,$ob) = ReadAnswer($hwdevice);
     #-- padding first 9 bytes into result string, since we have this 
     #   in the serial interfaces as well
     $res .= "000000000";
   }
   #-- has data part
   if ( $data ){
-    $self->CCC_Send($data);
+    $self->Send($data);
     $res .= $data;
   }
   #-- has receive part
@@ -219,9 +223,9 @@ sub Complex ($$$) {
     #$numread += length($data);
     main::Log(3,"COC/CUNO is expected to deliver $numread bytes")
       if( $main::owx_debug > 1);
-    $res.=$self->CCC_Receive($numread);
+    $res.=$self->Receive($numread);
   }
-  main::Log(3,"OWX: returned from COC/CUNO $res")
+  main::Log(3,"OWX_CCC: returned from COC/CUNO $res")
     if( $main::owx_debug > 1);
   return $res;
 }
@@ -251,9 +255,9 @@ sub Discover () {
   #-- get the devices
   main::CUL_SimpleWrite($hwdevice, "Oc");
   select(undef,undef,undef,0.5);
-  my ($err,$ob) = CCC_ReadAnswer($hwdevice);
+  my ($err,$ob) = ReadAnswer($hwdevice);
   if( $ob ){
-    main::Log(3,"OWX_CCC_Discover: Answer to ".$hwdevice->{NAME}." device search is ".$ob);
+    main::Log(3,"OWX_Discover: Answer to ".$hwdevice->{NAME}." device search is ".$ob);
     foreach my $dx (split(/\n/,$ob)){
       next if ($dx !~ /^\d\d?\:[0-9a-fA-F]{16}/);
       $dx =~ s/\d+\://;
@@ -267,7 +271,7 @@ sub Discover () {
     }
     return 1;
   } else {
-    main::Log(1, "OWX: No answer to ".$hwdevice->{NAME}." device search");
+    main::Log(1, "OWX_CCC: No answer to ".$hwdevice->{NAME}." device search");
     return 0;
   }
 }
@@ -373,7 +377,7 @@ sub Verify ($) {
 #
 ########################################################################################
 #
-# CCC_ReadAnswer - Replacement for CUL_ReadAnswer for better control
+# ReadAnswer - Replacement for CUL_ReadAnswer for better control
 # 
 # Parameter: hash = hash of bus master 
 #
@@ -381,7 +385,7 @@ sub Verify ($) {
 #
 ########################################################################################
 
-sub CCC_ReadAnswer($)
+sub ReadAnswer($)
 {
   my ($hwdevice) = @_;
   
@@ -405,7 +409,7 @@ sub CCC_ReadAnswer($)
         next if ($! == EAGAIN() || $! == EINTR() || $! == 0);
         my $err = $!;
         main::DevIo_Disconnected($hwdevice); # TODO: DevIO_Disconnected sets hash on readyFnList! -> results in errors later as there's no ReadyFn in OWX
-        return("OWX_CCC_ReadAnswer $arg: $err", undef);
+        return("ReadAnswer $arg: $err", undef);
       }
       return ("Timeout reading answer for get $arg", undef)
         if($nfound == 0);
@@ -432,7 +436,7 @@ sub CCC_ReadAnswer($)
 
 ########################################################################################
 #
-# CCC_Receive - Read data from the 1-Wire bus
+# Receive - Read data from the 1-Wire bus
 # 
 # Parameter: hash = hash of bus master, numread = number of bytes to read
 #
@@ -440,7 +444,7 @@ sub CCC_ReadAnswer($)
 #
 ########################################################################################
 
-sub CCC_Receive ($) {
+sub Receive ($) {
   my ($self,$numread) = @_;
   my $hash = $self->{hash};
   
@@ -456,7 +460,7 @@ sub CCC_Receive ($) {
   #my $ob = CallFn($hwdevice->{NAME}, "GetFn", $hwdevice, (" ", "raw", "OrB"));
   main::CUL_SimpleWrite($hwdevice, "OrB");
   select(undef,undef,undef,0.01);
-  my ($err,$ob) = CCC_ReadAnswer($hwdevice);
+  my ($err,$ob) = ReadAnswer($hwdevice);
   #main::Log(1, "Answer from $hwdevice->{NAME}:$ob: ";
 
     #-- process results  
@@ -473,7 +477,7 @@ sub CCC_Receive ($) {
     #-- 18 bytes received from CUNO 
     }elsif( length($ob) == 18 ){
     
-    my $res = "OWX: Receiving 18 bytes from CUNO: $ob\n";
+    my $res = "OWX_CCC: Receiving 18 bytes from CUNO: $ob\n";
     for(my $i=0;$i<length($ob);$i++){  
       my $j=int(ord(substr($ob,$i,1))/16);
       my $k=ord(substr($ob,$i,1))%16;
@@ -486,10 +490,10 @@ sub CCC_Receive ($) {
     }elsif( length($ob) == 20 ){
       $numread++;
     }else{
-      main::Log(1,"OWX: Received unexpected number of ".length($ob)." bytes on bus ".$hwdevice->{NAME});
+      main::Log(1,"OWX_CCC: Received unexpected number of ".length($ob)." bytes on bus ".$hwdevice->{NAME});
     } 
   }
-  main::Log(3, "OWX: Received $numread bytes = $res2 on bus ".$hwdevice->{NAME})
+  main::Log(3, "OWX_CCC: Received $numread bytes = $res2 on bus ".$hwdevice->{NAME})
      if( $main::owx_debug > 1);
   
   return($res);
@@ -497,7 +501,7 @@ sub CCC_Receive ($) {
 
 #########################################################################################
 # 
-# CCC_Send - Send data block  
+# Send - Send data block  
 #
 # Parameter hash = hash of bus master, data = string to send
 #
@@ -506,7 +510,7 @@ sub CCC_Receive ($) {
 #
 ########################################################################################
 
-sub CCC_Send ($) {
+sub Send ($) {
   my ($self,$data) =@_;
   my $hash = $self->{hash};
   
@@ -524,7 +528,7 @@ sub CCC_Send ($) {
     $res2.=sprintf "0x%1x%1x ",$j,$k;
     main::CUL_SimpleWrite($hwdevice, $res);
   } 
-  main::Log(3,"OWX: Send to COC/CUNO $res2")
+  main::Log(3,"OWX_CCC: Sent to COC/CUNO $res2")
      if( $main::owx_debug > 1);
 }
 

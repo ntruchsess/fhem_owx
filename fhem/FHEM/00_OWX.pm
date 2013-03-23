@@ -12,9 +12,7 @@
 # Prof. Dr. Peter A. Henning
 # Norbert Truchsess
 #
-# Contributions from: Martin Fischer, Rudolf König, Boris Neubert, Joachim Herold, 
-#
-# $Id: 00_OWX.pm 3.19 2013-03 - pahenning $
+# $Id: 00_OWX.pm 2013-03 - pahenning $
 #
 ########################################################################################
 #
@@ -29,6 +27,7 @@
 #
 # get <name> alarms                 => find alarmed 1-Wire devices (not with CUNO)
 # get <name> devices                => find all 1-Wire devices 
+# get <name> version                => OWX version number
 #
 # set <name> interval <seconds>     => set period for temperature conversion and alarm testing
 # set <name> followAlarms on/off    => determine whether an alarm is followed by a search for
@@ -72,29 +71,51 @@ if( $^O =~ /Win/ ) {
   $owgdevregexp= "/dev/";
 } 
 
-use vars qw{%attr %defs $init_done};
-
 require "$attr{global}{modpath}/FHEM/DevIo.pm";
-
 sub Log($$);
 
-# These we may get on request
-my %gets = (
-   "alarms"  => "A",
-   "devices" => "D"
+use vars qw{%owfamily %gets %sets};
+# 1-Wire devices 
+# http://owfs.sourceforge.net/family.html
+%owfamily = (
+  "01"  => ("DS2401/DS1990A","OWID"),
+  "05"  => ("DS2405","OWID"),
+  "10"  => ("DS18S20/DS1920","OWTHERM DS1820"),
+  "12"  => ("DS2406/DS2507","OWSWITCH DS2406"),
+  "1B"  => ("DS2436","OWID"),
+  "1D"  => ("DS2436","OWID"),
+  "20"  => ("DS2450","OWAD DS2450"),
+  "22"  => ("DS1822","OWTHERM DS1822"),
+  "24"  => ("DS2415/DS1904","OWID"),
+  "26"  => ("DS2438","OWMULTI DS2438"),
+  "27"  => ("DS2417","OWID"),
+  "28"  => ("DS18B20","OWTHERM DS18B20"),
+  "29"  => ("DS2408","OWSWITCH DS2408"),
+  "3A"  => ("DS2413","OWSWITCH DS2413"),
+  "3B"  => ("DS1825","OWID"),
+  "81"  => ("DS1420","OWID")
+  "FF"  => ("LCD","OWLCD")
 );
 
-# These occur in a pulldown menu as settable values for the bus master
+#-- These we may get on request
+my %gets = (
+   "alarms"  => "A",
+   "devices" => "D",
+   "version" => "V"
+);
+
+#-- These occur in a pulldown menu as settable values for the bus master
 my %sets = (
    "interval" => "T",
    "followAlarms" => "F"
 );
 
-# These are attributes
+#-- These are attributes
 my %attrs = (
 );
 
 #-- some globals needed for the 1-Wire module
+my $owx_version=4.0;
 #-- Debugging 0,1,2,3
 my $owx_debug=0;
 
@@ -113,7 +134,7 @@ my $owx_debug=0;
 sub OWX_Initialize ($) {
   my ($hash) = @_;
   #-- Provider
-  $hash->{Clients}     = ":OWAD:OWCOUNT:OWID:OWLCD:OWMULTI:OWSWITCH:OWTHERM:";
+  $hash->{Clients} = ":OWAD:OWCOUNT:OWID:OWLCD:OWMULTI:OWSWITCH:OWTHERM:";
 
   #-- Normal Devices
   $hash->{DefFn}   = "OWX_Define";
@@ -517,65 +538,23 @@ sub OWX_Discover ($) {
       #
     }
  
-    #-- Determine the device type. This is done manually here
-    #   could be automatic as in OWServer
-    my $acstring;
-    my $chip;
-    #-- Family 01 = ROM display    
-    if( $owx_f eq "01" ){
-      $chip     = "DS2401";
-      $acstring = "OWID";  
-    #-- Family 10 = Temperature sensor DS1820
-    }elsif( $owx_f eq "10" ){
-      $chip     = "DS1820";
-      $acstring = "OWTHERM DS1820";  
-    #-- Family 12 = Switch DS2406
-    }elsif( $owx_f eq "12" ){
-      $chip     = "DS2406";
-      $acstring = "OWSWITCH DS2406";     
-    #-- Family 1D = Counter/RAM DS2423
-    }elsif( $owx_f eq "1D" ){
-      $chip     = "DS2423";
-      $acstring = "OWCOUNT DS2423";            
-    #-- Family 20 = A/D converter DS2450
-    } elsif( $owx_f eq "20" ){
-      $chip     = "DS2450";
-      $acstring = "OWAD DS2450"; 
-    #-- Family 22 = Temperature sensor DS1822
-    }elsif( $owx_f eq "22" ){
-      $chip     = "DS1822";
-      $acstring = "OWTHERM DS1822";  
-    #-- Family 26 = Multisensor DS2438
-    }elsif( $owx_f eq "26" ){
-      $chip     = "DS2438";
-      $acstring = "OWMULTI DS2438";
-    #-- Family 28 = Temperature sensor DS18B20
-    }elsif( $owx_f eq "28" ){
-      $chip     = "DS18B20";
-      $acstring = "OWTHERM DS18B20";   
-    #-- Family 29 = Switch DS2408
-    }elsif( $owx_f eq "29" ){
-      $chip     = "DS2408";
-      $acstring = "OWSWITCH DS2408";  
-    #-- Family 3A = Switch DS2413
-    }elsif( $owx_f eq "3A" ){
-      $chip     = "DS2413";
-      $acstring = "OWSWITCH DS2413";  
-    #-- Family FF = LCD display    
-    }elsif( $owx_f eq "FF" ){
-      $chip     = "LCD";
-      $acstring = "OWLCD";              
-    #-- All unknown families are ID only (ID-Chips have family id 09)
+    #-- Determine the device type
+    my ($chip,$acstring);
+    if(exists $owfamily{$owx_f) {
+      $chip     = $owfamily{$owx_f}[0];
+      $acstring = $owfamily{$owx_f}[1];
+    }else{  
+      Log 2, "OWX: Unknown family code '$owx_f' found";
+      #-- All unknown families are ID only
     } else {
       $chip     = "unknown";
       $acstring = "OWID $owx_f";  
     }
-       
     #Log 1,"###\nfor the following device match=$match, chip=$chip name=$name acstring=$acstring";
     #-- device exists
     if( $match==1 ){
       $ret .= sprintf("%s.%s      %-10s %s\n", $owx_f,$owx_rnf, $chip, $exname);
-    #-- device unknoen, autocreate
+    #-- device unknown, autocreate
     }else{
     #-- example code for checking global autocreate - do we want this ?
     #foreach my $d (keys %defs) {
@@ -657,6 +636,9 @@ sub OWX_Get($@) {
     my $res = OWX_Discover($hash);
     #-- process result
     return $res
+        
+  } elsif( $a[1] eq "version") {
+    return $owx_version;
     
   } else {
     return "OWX: Get with unknown argument $a[1], choose one of ". 
