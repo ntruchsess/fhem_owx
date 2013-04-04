@@ -147,7 +147,7 @@ sub Detect () {
       $ress .= "master DS2480 re-detected";
       $interface="DS2480";
       $ret=1;
-    } elsif( ($res eq "\x17\x0A\x5B\x0F\x02") || ($res eq "\x00\x17\x0A\x5B\x0F\x02") || ($res eq "\x30\xf8\x00") ){
+    } elsif( ($res eq "\x17\x0A\x5B\x0F\x02") || ($res eq "\x00\x17\x0A\x5B\x0F\x02") || ($res eq "\x30\xf8\x00") || ($res eq "\x06\x00\x09\x07\x80")){
       $ress .= "passive DS9097 detected";
       $interface="DS9097";
       $ret=1;
