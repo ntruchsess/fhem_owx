@@ -498,6 +498,8 @@ sub OWX_Discover ($) {
     } 
   }
 
+  if (defined $res and (ref($res) eq "ARRAY")) {
+  	$hash->{DEVS} = $res;
   #-- Go through all devices found on this bus
   foreach my $owx_dev  (@{$hash->{DEVS}}) {
     #-- ignore those which do not have the proper pattern
@@ -582,6 +584,7 @@ sub OWX_Discover ($) {
         $ret .= sprintf("%s.%s      %-10s %s\n", $owx_f,$owx_rnf, $chip, $acname);
       } 
     }
+  }
   }
 
   #-- final step: Undefine all 1-Wire devices which 
