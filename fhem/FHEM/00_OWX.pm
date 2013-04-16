@@ -71,7 +71,7 @@ if( $^O =~ /Win/ ) {
   $SER_regexp= "/dev/";
 } 
 
-require "$attr{global}{modpath}/FHEM/DevIo.pm";
+require "$main::attr{global}{modpath}/FHEM/DevIo.pm";
 sub Log($$);
 
 use vars qw{%owg_family %gets %sets $owx_version $owx_debug};
@@ -218,14 +218,10 @@ sub OWX_Define ($$) {
 sub OWX_Alarms ($) {
   my ($hash) = @_;
 
-  my @owx_alarm_names=();
-  
   #-- get the interface
   my $name          = $hash->{NAME};
   my $owx           = $hash->{OWX};
   my $res;
-
-  $hash->{ALARMDEVS}=();
 
   if (defined $owx) {
     $res = $owx->Alarms();
@@ -238,18 +234,24 @@ sub OWX_Alarms ($) {
       return "OWX: Alarms called with unknown interface $owx_interface on bus $name";
     }
   }
+  return OWX_AfterAlarms($hash,$res);
+};
 
-  if( $res == 0){
+sub OWX_AfterAlarms($$) {
+  my ($hash,$alarmed_devs) = @_;
+  my @owx_alarm_names=();
+  my $name          = $hash->{NAME};
+  $hash->{ALARMDEVS} = $alarmed_devs;
+  if( $alarmed_devs == 0){
     return "OWX: No alarmed 1-Wire devices found on bus $name";
   }
-
   #-- walk through all the devices to get their proper fhem names
   foreach my $fhem_dev (sort keys %main::defs) {
     #-- skip if busmaster
     next if( $name eq $main::defs{$fhem_dev}{NAME} );
     #-- all OW types start with OW
     next if( substr($main::defs{$fhem_dev}{TYPE},0,2) ne "OW");
-    foreach my $owx_dev  (@{$hash->{ALARMDEVS}}) {
+    foreach my $owx_dev  (@{$alarmed_devs}) {
       #-- two pieces of the ROM ID found on the bus
       my $owx_rnf = substr($owx_dev,3,12);
       my $owx_f   = substr($owx_dev,0,2);
@@ -263,8 +265,8 @@ sub OWX_Alarms ($) {
     }
   }
   #-- so far, so good - what do we want to do with this ?
-  return "OWX: $res alarmed 1-Wire devices found on bus $name (".join(",",@owx_alarm_names).")";
-}  
+  return "OWX: ".scalar(@owx_alarm_names)." alarmed 1-Wire devices found on bus $name (".join(",",@owx_alarm_names).")";
+};
 
 ########################################################################################
 # 
@@ -469,21 +471,12 @@ sub OWX_CRC16 ($$$) {
 
 sub OWX_Discover ($) {
   my ($hash) = @_;
-  my $name = $hash->{NAME};
   
   my $res;
-  my $ret= "";
-  my ($chip,$acstring,$acname,$exname);
   my $ow_dev;
-  my $owx_rnf;
-  my $owx_f;
-  my $owx_crc;
-  my $id_owx;
-  my $match;
   
   #-- get the interface
   my $owx = $hash->{OWX};
-  my @owx_names=();
 
   #-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
   if (defined $owx) {
@@ -497,94 +490,103 @@ sub OWX_Discover ($) {
       return undef;
     } 
   }
-
-  if (defined $res and (ref($res) eq "ARRAY")) {
-  	$hash->{DEVS} = $res;
-  #-- Go through all devices found on this bus
-  foreach my $owx_dev  (@{$hash->{DEVS}}) {
-    #-- ignore those which do not have the proper pattern
-    if( !($owx_dev =~ m/[0-9A-F]{2}\.[0-9A-F]{12}\.[0-9A-F]{2}/) ){
-      Log 3,"OWX: Invalid 1-Wire device ID $owx_dev, ignoring it";
-      next;
-    }
-    
-    #-- three pieces of the ROM ID found on the bus
-    $owx_rnf = substr($owx_dev,3,12);
-    $owx_f   = substr($owx_dev,0,2);
-    $owx_crc = substr($owx_dev,15,3);
-    $id_owx  = $owx_f.".".$owx_rnf;
-      
-    $match = 0;
-    
-    #-- Check against all existing devices  
-    foreach my $fhem_dev (sort keys %main::defs) { 
-      #-- skip if busmaster
-      # next if( $hash->{NAME} eq $main::defs{$fhem_dev}{NAME} );
-      #-- all OW types start with OW
-      next if( !defined($main::defs{$fhem_dev}{TYPE}));
-      next if( substr($main::defs{$fhem_dev}{TYPE},0,2) ne "OW");
-      my $id_fhem = substr($main::defs{$fhem_dev}{ROM_ID},0,15);
-      #-- skip interface device
-      next if( length($id_fhem) != 15 );
-      #-- testing if equal to the one found here  
-      #   even with improper family
-      #   Log 1, " FHEM-Device = ".substr($id_fhem,3,12)." OWX discovered device ".substr($id_owx,3,12);
-      if( substr($id_fhem,3,12) eq substr($id_owx,3,12) ) {
-        #-- warn if improper family id
-        if( substr($id_fhem,0,2) ne substr($id_owx,0,2) ){
-          Log 1, "OWX: Warning, $fhem_dev is defined with improper family id ".substr($id_fhem,0,2). 
-           ", must enter correct model in configuration";
-           #$main::defs{$fhem_dev}{OW_FAMILY} = substr($id_owx,0,2);
-        }
-        $exname=$main::defs{$fhem_dev}{NAME};
-        push(@owx_names,$exname);
-        #-- replace the ROM ID by the proper value including CRC
-        $main::defs{$fhem_dev}{ROM_ID}=$owx_dev;
-        $main::defs{$fhem_dev}{PRESENT}=1;    
-        $match = 1;
-        last;
+  return OWX_AfterDiscover($hash,$res);
+}
+  
+sub OWX_AfterDiscover($$) {
+  my ($hash,$owx_devs) = @_;
+  my $name = $hash->{NAME};
+  my ($chip,$acstring,$acname,$exname);
+  my $ret= "";
+  my @owx_names=();
+	
+  if (defined $owx_devs and (ref($owx_devs) eq "ARRAY")) {
+  	$hash->{DEVS} = $owx_devs;
+    #-- Go through all devices found on this bus
+    foreach my $owx_dev  (@{$owx_devs}) {
+      #-- ignore those which do not have the proper pattern
+      if( !($owx_dev =~ m/[0-9A-F]{2}\.[0-9A-F]{12}\.[0-9A-F]{2}/) ){
+        Log 3,"OWX: Invalid 1-Wire device ID $owx_dev, ignoring it";
+        next;
       }
-      #
-    }
+    
+      #-- three pieces of the ROM ID found on the bus
+      my $owx_rnf = substr($owx_dev,3,12);
+      my $owx_f   = substr($owx_dev,0,2);
+      my $owx_crc = substr($owx_dev,15,3);
+      my $id_owx  = $owx_f.".".$owx_rnf;
+      
+      my $match = 0;
+    
+      #-- Check against all existing devices  
+      foreach my $fhem_dev (sort keys %main::defs) { 
+        #-- skip if busmaster
+        # next if( $hash->{NAME} eq $main::defs{$fhem_dev}{NAME} );
+        #-- all OW types start with OW
+        next if( !defined($main::defs{$fhem_dev}{TYPE}));
+        next if( substr($main::defs{$fhem_dev}{TYPE},0,2) ne "OW");
+        my $id_fhem = substr($main::defs{$fhem_dev}{ROM_ID},0,15);
+        #-- skip interface device
+        next if( length($id_fhem) != 15 );
+        #-- testing if equal to the one found here  
+        #   even with improper family
+        #   Log 1, " FHEM-Device = ".substr($id_fhem,3,12)." OWX discovered device ".substr($id_owx,3,12);
+        if( substr($id_fhem,3,12) eq substr($id_owx,3,12) ) {
+          #-- warn if improper family id
+          if( substr($id_fhem,0,2) ne substr($id_owx,0,2) ){
+            Log 1, "OWX: Warning, $fhem_dev is defined with improper family id ".substr($id_fhem,0,2). 
+             ", must enter correct model in configuration";
+             #$main::defs{$fhem_dev}{OW_FAMILY} = substr($id_owx,0,2);
+          }
+          $exname=$main::defs{$fhem_dev}{NAME};
+          push(@owx_names,$exname);
+          #-- replace the ROM ID by the proper value including CRC
+          $main::defs{$fhem_dev}{ROM_ID}=$owx_dev;
+          $main::defs{$fhem_dev}{PRESENT}=1;    
+          $match = 1;
+          last;
+        }
+        #
+      }
  
-    #-- Determine the device type
-    if(exists $owg_family{$owx_f}) {
-      $chip     = $owg_family{$owx_f}[0];
-      $acstring = $owg_family{$owx_f}[1];
-    }else{  
-      Log 2, "OWX: Unknown family code '$owx_f' found";
-      #-- All unknown families are ID only
-      $chip     = "unknown";
-      $acstring = "OWID $owx_f";  
+      #-- Determine the device type
+      if(exists $owg_family{$owx_f}) {
+        $chip     = $owg_family{$owx_f}[0];
+        $acstring = $owg_family{$owx_f}[1];
+      }else{  
+        Log 2, "OWX: Unknown family code '$owx_f' found";
+        #-- All unknown families are ID only
+        $chip     = "unknown";
+        $acstring = "OWID $owx_f";  
+      }
+      #Log 1,"###\nfor the following device match=$match, chip=$chip name=$name acstring=$acstring";
+      #-- device exists
+      if( $match==1 ){
+        $ret .= sprintf("%s.%s      %-14s %s\n", $owx_f,$owx_rnf, $chip, $exname);
+      #-- device unknown, autocreate
+      }else{
+        #-- example code for checking global autocreate - do we want this ?
+        #foreach my $d (keys %defs) {
+        #next if($defs{$d}{TYPE} ne "autocreate");
+        #return undef if(AttrVal($defs{$d}{NAME},"disable",undef));
+        $acname = sprintf "OWX_%s_%s",$owx_f,$owx_rnf;
+        #Log 1, "to define $acname $acstring $owx_rnf";
+        my $res = CommandDefine(undef,"$acname $acstring $owx_rnf");
+        if($res) {
+          $ret.= "OWX: Error autocreating with $acname $acstring $owx_rnf: $res\n";
+        } else{
+          select(undef,undef,undef,0.1);
+          push(@owx_names,$acname);
+          $main::defs{$acname}{PRESENT}=1;
+          #-- THIS IODev, default room (model is set in the device module)
+          CommandAttr (undef,"$acname IODev $hash->{NAME}"); 
+          CommandAttr (undef,"$acname room OWX"); 
+          #-- replace the ROM ID by the proper value 
+          $main::defs{$acname}{ROM_ID}=$owx_dev;
+          $ret .= sprintf("%s.%s      %-10s %s\n", $owx_f,$owx_rnf, $chip, $acname);
+        } 
+      }
     }
-    #Log 1,"###\nfor the following device match=$match, chip=$chip name=$name acstring=$acstring";
-    #-- device exists
-    if( $match==1 ){
-      $ret .= sprintf("%s.%s      %-14s %s\n", $owx_f,$owx_rnf, $chip, $exname);
-    #-- device unknown, autocreate
-    }else{
-    #-- example code for checking global autocreate - do we want this ?
-    #foreach my $d (keys %defs) {
-    #next if($defs{$d}{TYPE} ne "autocreate");
-    #return undef if(AttrVal($defs{$d}{NAME},"disable",undef));
-      $acname = sprintf "OWX_%s_%s",$owx_f,$owx_rnf;
-      #Log 1, "to define $acname $acstring $owx_rnf";
-      $res = CommandDefine(undef,"$acname $acstring $owx_rnf");
-      if($res) {
-        $ret.= "OWX: Error autocreating with $acname $acstring $owx_rnf: $res\n";
-      } else{
-        select(undef,undef,undef,0.1);
-        push(@owx_names,$acname);
-        $main::defs{$acname}{PRESENT}=1;
-        #-- THIS IODev, default room (model is set in the device module)
-        CommandAttr (undef,"$acname IODev $hash->{NAME}"); 
-        CommandAttr (undef,"$acname room OWX"); 
-        #-- replace the ROM ID by the proper value 
-        $main::defs{$acname}{ROM_ID}=$owx_dev;
-        $ret .= sprintf("%s.%s      %-10s %s\n", $owx_f,$owx_rnf, $chip, $acname);
-      } 
-    }
-  }
   }
 
   #-- final step: Undefine all 1-Wire devices which 
@@ -875,6 +877,35 @@ sub OWX_Verify ($$) {
     }
   }
 }
+
+########################################################################################
+#
+# OWX_Execute - # similar to OWX_Complex, but asynchronous
+# executes a sequence of 'reset','skip/match ROM','write','read','delay' on the bus
+#
+# Parameter hash = hash of bus master, 
+#          reset = 1/0 if 1 reset the bus first 
+#        owx_dev = 8 Byte ROM ID of device to be tested, if undef do a 'skip ROM' instead
+#           data = bytes to write (string)
+#        numread = number of bytes to read after write
+#          delay = optional delay (in ms) to wait after executing the next command 
+#                  for the same device
+#
+# Returns : nothing, instead OWX_AfterExecute is called back asynchronous if numread is > 0
+#
+########################################################################################
+
+
+sub OWX_Execute($$$$$$) {
+	my ( $hash, $reset, $owx_dev, $data, $numread, $delay ) = @_;
+	if (my $executor = $hash->{executor}) {
+		$executor->execute( $reset, $owx_dev, $data, $numread, $delay );
+	};
+};
+
+sub OWX_AfterExecute($$$$$$) {
+	my ( $hash, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
+};
 
 1;
 
