@@ -51,7 +51,7 @@ sub execute($$$$$$) {
 	);
 };
 
-sub Poll($) {
+sub poll($) {
 	my ($self,$hash) = @_;
 	
 	# Non-blocking dequeue

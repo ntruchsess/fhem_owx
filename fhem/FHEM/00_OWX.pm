@@ -285,12 +285,28 @@ sub OWX_AfterAlarms($$) {
 sub OWX_Complex ($$$$) {
   my ($hash,$owx_dev,$data,$numread) =@_;
   my $name   = $hash->{NAME};
-    
+  
   #-- get the interface
   my $owx = $hash->{OWX};
 
   if (defined $owx) {
-	return $owx->Complex($owx_dev,$data,$numread);
+  	delete $hash->{replies}{$owx_dev}{$data};
+	$owx->execute( 0, $owx_dev, $data, $numread, 0 );
+	my $result = "000000000".$data;
+	if ($numread > 0) {
+		my $times = AttrVal($hash,"timeout",1000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
+		for (my $i=0;$i<$times;$i++) {
+			if(! defined $hash->{replies}{$owx_dev}{$data}) {
+				select (undef,undef,undef,0.05);
+				$owx->poll($hash);
+			} else {
+				$result .= $hash->{replies}{$owx_dev}{$data};
+				last;
+			};
+		};
+	};
+	Log 1, "OWX_Complex: $result";
+	return $result; 	  	
   } else {
 	#-- interface error
   	my $owx_interface = $hash->{INTERFACE};
@@ -905,6 +921,24 @@ sub OWX_Execute($$$$$$) {
 
 sub OWX_AfterExecute($$$$$$) {
 	my ( $hash, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
+
+	main::Log(1,"AfterExecute: $reset, $owx_dev, $data, $numread, $readdata");
+	
+	foreach my $d ( sort keys %main::defs ) {
+		if (   defined( $main::defs{$d} )
+			&& defined( $main::defs{$d}{ROM_ID} )
+			&& defined( $main::defs{$d}{IODev} ) 
+			&& $main::defs{$d}{IODev} == $hash 
+			&& $main::defs{$d}{ROM_ID} eq $owx_dev )
+		{
+			main::Log(1,"AfterExecute: match $owx_dev");
+			if ($main::defs{$d}{AfterExecuteFn}) {
+				my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $reset, $owx_dev, $data, $numread, $readdata);
+			} else {
+				$hash->{replies}{$owx_dev}{$data} = $readdata;
+			}
+		};
+	};
 };
 
 1;

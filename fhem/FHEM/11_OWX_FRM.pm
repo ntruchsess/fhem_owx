@@ -120,7 +120,8 @@ sub FRM_OWX_observer
 			$self->{replies}->{$owx_device} = $owx_data;
 			unless ($self->{synchronous}) {
 				my $request = $self->{requests}->{$owx_device};
-				OWX_AfterExecute( $self->{hash}, $request->{reset}, $request->{owx_dev}, $request->{writedata}, $request->{numread}, $owx_data );
+				my $data = pack "C*",@{$request->{'write'}};
+				main::OWX_AfterExecute( $self->{hash}, $request->{'reset'}, $owx_device, $data, $request->{'read'}, $owx_data );
 			}
 			last;			
 		};
@@ -389,22 +390,31 @@ sub execute($$$$$) {
 	if ( my $hash = $self->{hash} ) {
 		if ( my $frm = $hash->{IODev} ) {
 			if (my $firmata = $frm->{FirmataDevice} and my $pin = $self->{pin} ) {
+				my @data = unpack "C*", $data if defined $data;
 				my $ow_command = {
-					reset  => $reset,
-					skip   => defined ($owx_dev) ? undef : 1,
-					select => defined ($owx_dev) ? FRM_OWX_device_to_firmata($owx_dev) : undef,
-					read   => $numread,
-					write  => defined ($data) ? \@{unpack "C*", $data} : undef, 
-					delay  => $delay
+					'reset'  => $reset,
+					'skip'   => defined ($owx_dev) ? undef : 1,
+					'select' => defined ($owx_dev) ? FRM_OWX_device_to_firmata($owx_dev) : undef,
+					'read'   => $numread,
+					'write'  => @data ? \@data : undef, 
+					'delay'  => $delay
 				};
 		
 				$owx_dev = '00.000000000000.00' unless defined $owx_dev;
+				$self->{requests}->{$owx_dev} = $ow_command;
 				$self->{replies}->{$owx_dev} = undef;		
 		
 				$firmata->onewire_command_series( $pin, $ow_command );
 			};
 		};
 	};
+};
+
+sub poll($) {
+	my ($self,$hash) = @_;
+	if (my $frm = $hash->{IODev} ) {
+		main::FRM_poll($frm);
+	};		
 };
 
 1;
