@@ -486,27 +486,36 @@ sub OWX_CRC16 ($$$) {
 ########################################################################################
 
 sub OWX_Discover ($) {
-  my ($hash) = @_;
+	my ($hash) = @_;
   
-  my $res;
-  my $ow_dev;
+	my $res;
+	my $ow_dev;
   
-  #-- get the interface
-  my $owx = $hash->{OWX};
+	#-- get the interface
+	my $owx = $hash->{OWX};
 
-  #-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
-  if (defined $owx) {
-	$res = $owx->Discover();
-  } else {
-  	my $owx_interface = $hash->{INTERFACE};
-    if( !defined($owx_interface) ) {
-      return undef;
-    } else {
-      Log 1,"OWX: Discover called with unknown interface $owx_interface";
-      return undef;
-    } 
-  }
-  return OWX_AfterDiscover($hash,$res);
+	#-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
+	if (defined $owx) {
+		delete $hash->{discovered};
+		$owx->search();
+		my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
+		for (my $i=0;$i<$times;$i++) {
+			if(! defined $hash->{discovered} ) {
+				select (undef,undef,undef,0.05);
+				$owx->poll($hash);
+			} else {
+				return $hash->{discovered};
+			};
+		};
+	} else {
+		my $owx_interface = $hash->{INTERFACE};
+		if( !defined($owx_interface) ) {
+			return undef;
+		} else {
+			Log 1,"OWX: Discover called with unknown interface $owx_interface";
+			return undef;
+		} 
+	}
 }
   
 sub OWX_AfterDiscover($$) {
@@ -634,8 +643,7 @@ sub OWX_AfterDiscover($$) {
   #-- Log the discovered devices
   Log 1, "OWX: 1-Wire devices found on bus $name (".join(",",@owx_names).")";
   #-- tabular view as return value
-  return "OWX: 1-Wire devices found on bus $name \n".$ret;
-  
+  $hash->{discovered} = "OWX: 1-Wire devices found on bus $name \n".$ret;
 }   
 
 ########################################################################################
