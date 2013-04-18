@@ -794,23 +794,23 @@ sub OWX_Kick($) {
 ########################################################################################
 
 sub OWX_Reset ($) {
-  my ($hash)=@_;
+	my ($hash)=@_;
   
-  #-- get the interface
-  my $owx           = $hash->{OWX};
+	#-- get the interface
+	my $owx           = $hash->{OWX};
   
-  if (defined $owx) {
-	return $owx->Reset();
-  } else {  	
-    #-- interface error
-    my $owx_interface = $hash->{INTERFACE};
-    if( !(defined($owx_interface))){
-      return 0;
-    } else {
-      Log 3,"OWX: Reset called with unknown interface $owx_interface";
-      return 0;
-    }
-  }
+	if (defined $owx) {
+		return $owx->execute(1, undef, undef, undef, undef );
+	} else {  	
+		#-- interface error
+		my $owx_interface = $hash->{INTERFACE};
+		if( !(defined($owx_interface))){
+			return 0;
+		} else {
+			Log 3,"OWX: Reset called with unknown interface $owx_interface";
+			return 0;
+		}
+	}
 }
 
 ########################################################################################

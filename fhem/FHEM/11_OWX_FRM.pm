@@ -188,58 +188,6 @@ sub Verify($) {
 	return 0;
 }
 
-sub Alarms() {
-	my ($self) = @_;
-	my $hash = $self->{hash};
-
-	#-- get the interface
-	my $frm = $hash->{IODev};
-	return 0 unless defined $frm;
-	my $firmata = $frm->{FirmataDevice};
-	my $pin     = $self->{pin};
-	return 0 unless ( defined $firmata and defined $pin );
-	$self->{alarmdevs} = undef;			
-	$firmata->onewire_search_alarms($pin);
-	my $times = main::AttrVal($hash,"ow-read-timeout",1000) / 50; #timeout in ms, defaults to 1 sec
-	$self->{synchronous} = 1;
-	for (my $i=0;$i<$times;$i++) {
-		if (main::FRM_poll($frm)) {
-			if (defined $self->{alarmdevs}) {
-				delete $self->{synchronous};
-				return $self->{alarmdevs};
-			}
-		} else {
-			select (undef,undef,undef,0.05);
-		}
-	}
-	delete $self->{synchronous};
-	return [];
-}
-
-########################################################################################
-# 
-# Reset - Reset the 1-Wire bus 
-#
-# Parameter hash = hash of bus master
-#
-# Return 1 : OK
-#        0 : not OK
-#
-########################################################################################
-
-sub Reset() {
-	my ($self) = @_;
-	if ( my $hash = $self->{hash} ) {
-		if ( my $frm = $hash->{IODev} ) {
-			if (my $firmata = $frm->{FirmataDevice} and my $pin = $self->{pin} ) {
-				$firmata->onewire_reset($pin);
-				return 1;
-			};
-		};
-	};
-	return undef;
-}
-
 ########################################################################################
 #
 # asynchronous methods search, alarms and execute
@@ -252,9 +200,11 @@ sub search() {
 		if ( my $frm = $hash->{IODev} ) {
 			if (my $firmata = $frm->{FirmataDevice} and my $pin = $self->{pin} ) {
 				$firmata->onewire_search($pin);
+				return 1;
 			};
 		};
 	};
+	return undef;
 };
 
 sub alarms() {
@@ -263,9 +213,11 @@ sub alarms() {
 		if ( my $frm = $hash->{IODev} ) {
 			if (my $firmata = $frm->{FirmataDevice} and my $pin = $self->{pin} ) {
 				$firmata->onewire_search_alarms($pin);
+				return 1;
 			};
 		};
 	};
+	return undef;
 };
 
 sub execute($$$$$) {
@@ -289,9 +241,11 @@ sub execute($$$$$) {
 				$self->{replies}->{$owx_dev} = undef;		
 		
 				$firmata->onewire_command_series( $pin, $ow_command );
+				return 1;
 			};
 		};
 	};
+	return undef;
 };
 
 sub poll($) {
