@@ -12,13 +12,12 @@
 #
 # Provides the following methods for OWX
 #
-# Alarms
-# Complex
 # Define
-# Discover
 # Init
-# Reset
-# Verify
+# Verify #TODO refactor Verify...
+# search
+# alarms
+# execute
 #
 ########################################################################################
 
