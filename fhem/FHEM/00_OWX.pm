@@ -216,25 +216,34 @@ sub OWX_Define ($$) {
 ########################################################################################
 
 sub OWX_Alarms ($) {
-  my ($hash) = @_;
+	my ($hash) = @_;
 
-  #-- get the interface
-  my $name          = $hash->{NAME};
-  my $owx           = $hash->{OWX};
-  my $res;
+	#-- get the interface
+	my $name          = $hash->{NAME};
+	my $owx           = $hash->{OWX};
+	my $res;
 
-  if (defined $owx) {
-    $res = $owx->Alarms();
-  } else {
-    #-- interface error
-    my $owx_interface = $hash->{INTERFACE};
-    if( !(defined($owx_interface))){
-      return undef;
-    } else {
-      return "OWX: Alarms called with unknown interface $owx_interface on bus $name";
-    }
-  }
-  return OWX_AfterAlarms($hash,$res);
+	if (defined $owx) {
+		delete $hash->{alarmed};
+		$owx->alarms();
+		my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
+		for (my $i=0;$i<$times;$i++) {
+			if(! defined $hash->{alarmed} ) {
+				select (undef,undef,undef,0.05);
+				$owx->poll($hash);
+			} else {
+				return $hash->{alarmed};
+			};
+		};
+	} else {
+		#-- interface error
+		my $owx_interface = $hash->{INTERFACE};
+		if( !(defined($owx_interface))){
+			return undef;
+		} else {
+			return "OWX: Alarms called with unknown interface $owx_interface on bus $name";
+		}
+	}
 };
 
 sub OWX_AfterAlarms($$) {
@@ -243,7 +252,8 @@ sub OWX_AfterAlarms($$) {
   my $name          = $hash->{NAME};
   $hash->{ALARMDEVS} = $alarmed_devs;
   if( $alarmed_devs == 0){
-    return "OWX: No alarmed 1-Wire devices found on bus $name";
+    $hash->{alarmed} = "OWX: No alarmed 1-Wire devices found on bus $name";
+    return;
   }
   #-- walk through all the devices to get their proper fhem names
   foreach my $fhem_dev (sort keys %main::defs) {
@@ -265,7 +275,7 @@ sub OWX_AfterAlarms($$) {
     }
   }
   #-- so far, so good - what do we want to do with this ?
-  return "OWX: ".scalar(@owx_alarm_names)." alarmed 1-Wire devices found on bus $name (".join(",",@owx_alarm_names).")";
+  $hash->{alarmed} = "OWX: ".scalar(@owx_alarm_names)." alarmed 1-Wire devices found on bus $name (".join(",",@owx_alarm_names).")";
 };
 
 ########################################################################################
@@ -518,7 +528,7 @@ sub OWX_Discover ($) {
 	}
 }
   
-sub OWX_AfterDiscover($$) {
+sub OWX_AfterSearch($$) {
   my ($hash,$owx_devs) = @_;
   my $name = $hash->{NAME};
   my ($chip,$acstring,$acname,$exname);

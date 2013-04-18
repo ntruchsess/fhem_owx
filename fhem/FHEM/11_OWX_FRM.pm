@@ -133,7 +133,7 @@ sub FRM_OWX_observer
 			if ($command eq "SEARCH_REPLY") {
 				$self->{devs} = \@owx_devices;
 				unless ($self->{synchronous}) {
-					main::OWX_AfterDiscover($self->{hash},\@owx_devices);
+					main::OWX_AfterSearch($self->{hash},\@owx_devices);
 				};
 			} else {
 				$self->{alarmdevs} = \@owx_devices;
@@ -239,122 +239,6 @@ sub Reset() {
 	};
 	return undef;
 }
-
-########################################################################################
-# 
-# Complex - Send match ROM, data block and receive bytes as response
-#
-# Parameter hash    = hash of bus master, 
-#           owx_dev = ROM ID of device
-#           data    = string to send
-#           numread = number of bytes to receive
-#
-# Return response, if OK
-#        0 if not OK
-#
-########################################################################################
-
-sub Complex ($$$) {
-	my ($self,$owx_dev,$data,$numread) =@_;
-	
-	my $res = "";
-
-	if ( my $hash = $self->{hash} ) {
-		if ( my $frm = $hash->{IODev} ) {
-			if (my $firmata = $frm->{FirmataDevice} and my $pin = $self->{pin} ) {
-
-				my $ow_command = {};
-			
-				#-- has match ROM part
-				if ($owx_dev) {
-					$ow_command->{"select"} = FRM_OWX_device_to_firmata($owx_dev);
-			
-					#-- padding first 9 bytes into result string, since we have this
-					#   in the serial interfaces as well
-					$res .= "000000000";
-				}
-			
-				#-- has data part
-				if ($data) {
-					my @data = unpack "C*", $data;
-					$ow_command->{"write"} = \@data;
-					$res.=$data;
-				}
-			
-				#-- has receive part
-				if ( $numread > 0 ) {
-					$ow_command->{"read"} = $numread;
-					#Firmata sends 0-address on read after skip
-					$owx_dev = '00.000000000000.00' unless defined $owx_dev;
-					$self->{replies}->{$owx_dev} = undef;		
-				}
-			
-				$firmata->onewire_command_series( $pin, $ow_command );
-				
-				if ($numread) {
-					$self->{synchronous} = 1;
-					my $times = main::AttrVal($hash,"ow-read-timeout",1000) / 50; #timeout in ms, defaults to 1 sec
-					for (my $i=0;$i<$times;$i++) {
-						if (main::FRM_poll($frm)) {
-							if (defined $self->{replies}->{$owx_dev}) {
-								$res .= $self->{replies}->{$owx_dev};
-								delete $self->{synchronous};
-								return $res;
-							};
-						} else {
-							select (undef,undef,undef,0.05);
-						};
-					};
-					delete $self->{synchronous};
-				};
-				return $res;
-			};
-		};
-	};
-	return 0;
-};
-
-########################################################################################
-#
-# Discover - Discover devices on the 1-Wire bus via internal firmware
-#
-# Parameter hash = hash of bus master
-#
-# Return 0  : error
-#        1  : OK
-#
-########################################################################################
-
-sub Discover ($) {
-
-	my ($self) = @_;
-	
-	if ( my $hash = $self->{hash} ) {
-		if ( my $frm = $hash->{IODev} ) {
-			if (my $firmata = $frm->{FirmataDevice} and my $pin = $self->{pin} ) {
-				my $old_devices = $self->{devs};
-				$self->{devs} = undef;			
-				$firmata->onewire_search($pin);
-				my $times = main::AttrVal($hash,"ow-read-timeout",1000) / 50; #timeout in ms, defaults to 1 sec
-				$self->{synchronous} = 1;
-				for (my $i=0;$i<$times;$i++) {
-					if (main::FRM_poll($frm)) {
-						if (defined $self->{devs}) {
-							delete $self->{synchronous};
-							return $self->{devs};
-						}
-					} else {
-						select (undef,undef,undef,0.05);
-					}
-				}
-				$self->{devs} = $old_devices;
-				delete $self->{synchronous};	
-				return $self->{devs};
-			};
-		};
-	};
-	return 0;
-};
 
 ########################################################################################
 #
