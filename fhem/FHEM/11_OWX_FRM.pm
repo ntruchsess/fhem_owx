@@ -29,20 +29,19 @@ use warnings;
 
 use Device::Firmata::Constants qw/ :all /;
 
-sub new($) {
-	my ($class,$hash) = @_;
+sub new() {
+	my ($class) = @_;
 
 	return bless {
-		hash => $hash,
+		interface => "firmata",
 	    #-- module version
 		version => 4.0
 	}, $class;
 }
 
-sub Define($) {
-	my ($self,$def) = @_;
-	my $hash = $self->{hash};
-  	$hash->{INTERFACE} = "firmata";
+sub Define($$) {
+	my ($self,$hash,$def) = @_;
+	$self->{name} = $hash->{NAME};
 
   	if (defined $main::modules{FRM}) {
 		main::AssignIoPort($hash);
@@ -50,32 +49,13 @@ sub Define($) {
 		my $u = "wrong syntax: define <name> FRM_XXX pin";
   		return $u unless int(@a) > 0;
   		$self->{pin} = $a[2];
+  		$self->{IODev} = $hash->{IODev};
   		return undef;
   	} else {
   	  my $ret = "module FRM not yet loaded, please define an FRM device first."; 
   	  main::Log(1,$ret);
   	  return $ret;
   	}
-}
-
-sub Detect () {
-  my ($self) = @_;
-  my $hash = $self->{hash};
-
-  my $ret;
-  my $name = $hash->{NAME};
-  my $ress = "OWX: 1-Wire bus $name: interface ";
-
-  my $iodev = $hash->{IODev};
-  if (defined $iodev and defined $iodev->{FirmataDevice} and defined $iodev->{FD}) { #TODO $iodev->{FD} is not available on windows...
-    $ret=1;
-    $ress .= "Firmata detected in $iodev->{NAME}";
-  } else {
-	$ret=0;
-	$ress .= defined $iodev ? "$iodev->{NAME} is not connected to Firmata" : "not associated to any FRM device";
-  }
-  main::Log(1, $ress);
-  return $ret; 
 }
 
 ########################################################################################
@@ -89,25 +69,30 @@ sub Detect () {
 #
 ########################################################################################
 
-sub Init()
+sub Init($)
 {
-	my ($self) = @_;
-	my $hash = $self->{hash};
+	my ($self,$hash) = @_;
 	
 	my $pin = $self->{pin};
 	my $ret = main::FRM_Init_Pin_Client($hash,[$pin],PIN_ONEWIRE);
 	return $ret if (defined $ret);
-	my $firmata = $hash->{IODev}->{FirmataDevice};
+	my $firmata = $self->{IODev}->{FirmataDevice};
 	$firmata->observe_onewire($pin,\&FRM_OWX_observer,$self);
 	$self->{replies} = {};
 	$self->{devs} = [];
-	if ( main::AttrVal($hash->{NAME},"buspower","") eq "parasitic" ) {
+	if ( main::AttrVal($self->{name},"buspower","") eq "parasitic" ) {
 		$firmata->onewire_config($pin,1);
 	}
-	$hash->{STATE}="Initialized";
+	$self->{STATE}="Initialized";
 	$firmata->onewire_search($pin);
 	return undef;
 }
+
+sub Disconnect($)
+{
+	my ($hash) = @_;
+	$hash->{STATE} = "disconnected";
+};
 
 sub FRM_OWX_observer
 {
@@ -179,17 +164,16 @@ sub Verify($) {
 
 sub Alarms() {
 	my ($self) = @_;
-	my $hash = $self->{hash};
 
 	#-- get the interface
-	my $frm = $hash->{IODev};
+	my $frm = $self->{IODev};
 	return 0 unless defined $frm;
 	my $firmata = $frm->{FirmataDevice};
 	my $pin     = $self->{pin};
 	return 0 unless ( defined $firmata and defined $pin );
 	$self->{alarmdevs} = undef;			
 	$firmata->onewire_search_alarms($pin);
-	my $times = main::AttrVal($hash,"ow-read-timeout",1000) / 50; #timeout in ms, defaults to 1 sec
+	my $times = main::AttrVal($self->{name},"ow-read-timeout",1000) / 50; #timeout in ms, defaults to 1 sec
 	for (my $i=0;$i<$times;$i++) {
 		if (main::FRM_poll($frm)) {
 			if (defined $self->{alarmdevs}) {
@@ -215,9 +199,8 @@ sub Alarms() {
 
 sub Reset() {
 	my ($self) = @_;
-	my $hash = $self->{hash};
 	#-- get the interface
-	my $frm = $hash->{IODev};
+	my $frm = $self->{IODev};
 	return undef unless defined $frm;
 	my $firmata = $frm->{FirmataDevice};
 	my $pin     = $self->{pin};
@@ -244,12 +227,11 @@ sub Reset() {
 
 sub Complex ($$$) {
 	my ($self,$owx_dev,$data,$numread) =@_;
-	my $hash = $self->{hash};
 
 	my $res = "";
 
 	#-- get the interface
-	my $frm = $hash->{IODev};
+	my $frm = $self->{IODev};
 	return 0 unless defined $frm;
 	my $firmata = $frm->{FirmataDevice};
 	my $pin     = $self->{pin};
@@ -284,7 +266,7 @@ sub Complex ($$$) {
 	$firmata->onewire_command_series( $pin, $ow_command );
 	
 	if ($numread) {
-		my $times = main::AttrVal($hash,"ow-read-timeout",1000) / 50; #timeout in ms, defaults to 1 sec
+		my $times = main::AttrVal($self->{name},"ow-read-timeout",1000) / 50; #timeout in ms, defaults to 1 sec
 		for (my $i=0;$i<$times;$i++) {
 			if (main::FRM_poll($frm)) {
 				if (defined $self->{replies}->{$owx_dev}) {
@@ -313,10 +295,9 @@ sub Complex ($$$) {
 sub Discover ($) {
 
 	my ($self) = @_;
-	my $hash = $self->{hash};
 
 	#-- get the interface
-	my $frm = $hash->{IODev};
+	my $frm = $self->{IODev};
 	return 0 unless defined $frm;
 	my $firmata = $frm->{FirmataDevice};
 	my $pin     = $self->{pin};
@@ -324,7 +305,7 @@ sub Discover ($) {
 	my $old_devices = $self->{devs};
 	$self->{devs} = undef;			
 	$firmata->onewire_search($pin);
-	my $times = main::AttrVal($hash,"ow-read-timeout",1000) / 50; #timeout in ms, defaults to 1 sec
+	my $times = main::AttrVal($self->{name},"ow-read-timeout",1000) / 50; #timeout in ms, defaults to 1 sec
 	for (my $i=0;$i<$times;$i++) {
 		if (main::FRM_poll($frm)) {
 			if (defined $self->{devs}) {
