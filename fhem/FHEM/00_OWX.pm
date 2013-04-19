@@ -155,24 +155,21 @@ sub OWX_Initialize ($) {
 ########################################################################################
 
 sub OWX_Define ($$) {
-  my ($hash, $def) = @_;
-  my @a = split("[ \t][ \t]*", $def);
+	my ($hash, $def) = @_;
+	my @a = split("[ \t][ \t]*", $def);
   
-  my $owx_hwdevice;
+	my $owx_hwdevice;
   
-  #-- check syntax
-  if(int(@a) < 3){
-    return "OWX: Syntax error - must be define <name> OWX <serial-device>|<cuno/coc-device>|<arduino-pin>"
-  }
+	#-- check syntax
+   	return "OWX: Syntax error - must be define <name> OWX <serial-device>|<cuno/coc-device>|<arduino-pin>" if(int(@a) < 3);
 
-  Log 1,"OWX: Warning - Some parameter(s) ignored, must be define <name> OWX <serial-device>|<cuno/coc-device>|<arduino-pin>"
-    if( int(@a)>3 );
-  my $dev = $a[2];
+	Log 1,"OWX: Warning - Some parameter(s) ignored, must be define <name> OWX <serial-device>|<cuno/coc-device>|<arduino-pin>" if( int(@a)>3 );
+	my $dev = $a[2];
   
-  #-- Dummy 1-Wire ROM identifier, empty device lists
-  $hash->{ROM_ID}      = "FF";
-  $hash->{DEVS}        = ();
-  $hash->{ALARMDEVS}   = ();
+	#-- Dummy 1-Wire ROM identifier, empty device lists
+	$hash->{ROM_ID}      = "FF";
+	$hash->{DEVS}        = ();
+	$hash->{ALARMDEVS}   = ();
   
   my $owx;
   #-- First step - different methods
@@ -199,11 +196,10 @@ sub OWX_Define ($$) {
   $hash->{OWX} = $owx;
   $hash->{INTERFACE} = $owx->{INTERFACE};
   
-  #-- continue definition of OWX if interface define was ok, but init failed	
-  $ret = OWX_Init($hash);  
-  Log (GetLogLevel($hash->{NAME},2),"OWX: Error initializing ".$hash->{NAME}.": ".$ret) 
-    if ($ret);
-  return undef;
+	#-- continue definition of OWX if interface define was ok, but init failed	
+	$ret = OWX_Init($hash);  
+	Log (GetLogLevel($hash->{NAME},2),"OWX: Error initializing ".$hash->{NAME}.": ".$ret) if ($ret);
+	return undef;
 }
 
 sub OWX_Ready ($) {
@@ -234,7 +230,7 @@ sub OWX_Alarms ($) {
 
 	#-- get the interface
 	my $name          = $hash->{NAME};
-	my $owx           = $hash->{OWX};
+	my $owx           = $hash->{ASYNC};
 	my $res;
 
 	if (defined $owx) {
@@ -311,7 +307,7 @@ sub OWX_Complex ($$$$) {
   my $name   = $hash->{NAME};
   
   #-- get the interface
-  my $owx = $hash->{OWX};
+  my $owx = $hash->{ASYNC};
 
   if (defined $owx) {
   	delete $hash->{replies}{$owx_dev}{$data};
@@ -516,7 +512,7 @@ sub OWX_Discover ($) {
 	my $ow_dev;
   
 	#-- get the interface
-	my $owx = $hash->{OWX};
+	my $owx = $hash->{ASYNC};
 
 	#-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
 	if (defined $owx) {
@@ -719,6 +715,10 @@ sub OWX_Get($@) {
 sub OWX_Init ($) {
   my ($hash)=@_;
   
+  if (defined ($hash->{ASNYC})) {
+  	$hash->{ASYNC}->exit();
+  	$hash->{ASYNC} = undef; #TODO should we call delete on $hash->{ASYNC}?
+  } 
   #-- get the interface
   my $owx = $hash->{OWX};
   
@@ -734,6 +734,13 @@ sub OWX_Init ($) {
    	$hash->{INTERFACE} = $owx->{interface};
   } else {
     return "OWX: Init called with undefined interface";
+  }
+  
+  if ($hash->{INTERFACE} eq "firmata") {
+  	$hash->{ASYNC} = $owx;
+  } else {
+	require "$attr{global}{modpath}/FHEM/11_OWX_Executor.pm";
+	$hash->{ASYNC} = OWX_AsyncExecutor->new($owx);
   }
   
   #-- Fourth step: discovering devices on the bus

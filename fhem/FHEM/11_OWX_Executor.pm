@@ -29,16 +29,19 @@ sub new($) {
 
 sub search() {
 	my $self = shift;
+	main::Log (1,"Executor->search");
 	$self->{requests}->enqueue( { command => SEARCH } );
 }
 
 sub alarms() {
 	my $self = shift;
+	main::Log (1,"Executor->alarms");
 	$self->{requests}->enqueue( { command => ALARMS } );
 }
 
 sub execute($$$$$$) {
 	my ( $self, $reset, $owx_dev, $data, $numread, $delay ) = @_;
+	main::Log (1,"Executor->execute");	
 	$self->{requests}->enqueue(
 		{
 			command   => EXECUTE,
@@ -50,6 +53,15 @@ sub execute($$$$$$) {
 		}
 	);
 };
+
+sub exit() {
+	my ( $self ) = @_;
+	$self->{requests}->enqueue(
+		{
+			command => EXIT
+		}
+	);
+}
 
 sub poll($) {
 	my ($self,$hash) = @_;
@@ -64,7 +76,7 @@ sub poll($) {
 			RESPONSE_HANDLER: {
 				
 				$command eq SEARCH and do {
-					OWX_AfterDiscover($hash,$item->{devices});
+					OWX_AfterSearch($hash,$item->{devices});
 					last;
 				};
 				

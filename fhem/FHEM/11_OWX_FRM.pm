@@ -226,6 +226,9 @@ sub execute($$$$$) {
 	return undef;
 };
 
+sub exit() {
+};
+
 sub poll($) {
 	my ($self,$hash) = @_;
 	if (my $frm = $hash->{IODev} ) {
