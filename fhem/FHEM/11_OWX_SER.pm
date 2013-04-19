@@ -219,7 +219,10 @@ sub Discover () {
 # 
 # Init - Initialize the 1-wire device
 #
-# Return 1 if ok, 0 or undef otherwise
+# Parameter hash = hash of bus master
+#
+# Return 1 or Errormessage : not OK
+#        0 or undef : OK
 #
 ########################################################################################
 
@@ -231,7 +234,7 @@ sub Init($) {
   my $hwdevice = $hash->{USBDev};
   if(!defined($hwdevice)){
     main::Log(1, $msg." not defined: $!");
-    return undef;
+    return 1;
   } else {
     main::Log(1,$msg." defined");
   }
@@ -264,24 +267,24 @@ sub Init($) {
     #-- process 4/5-byte string for detection
     if( !defined($res)){
       $res="";
-      $ret=0;
+      $ret=1;
     }elsif( ($res eq "\x16\x44\x5A\x00\x90") || ($res eq "\x16\x44\x5A\x00\x93")){
       $ress .= "master DS2480 detected for the first time";
       $interface="DS2480";
-      $ret=1;
+      $ret=0;
     } elsif( $res eq "\x17\x45\x5B\x0F\x91"){
       $ress .= "master DS2480 re-detected";
       $interface="DS2480";
-      $ret=1;
+      $ret=0;
     } elsif( ($res eq "\x17\x0A\x5B\x0F\x02") || ($res eq "\x00\x17\x0A\x5B\x0F\x02") || ($res eq "\x30\xf8\x00") || ($res eq "\x06\x00\x09\x07\x80")){
       $ress .= "passive DS9097 detected";
       $interface="DS9097";
-      $ret=1;
-    } else {
       $ret=0;
+    } else {
+      $ret=1;
     }
     last 
-      if( $ret==1 );
+      if( $ret==0 );
     $ress .= "not found, answer was ";
     for($i=0;$i<length($res);$i++){
       $j=int(ord(substr($res,$i,1))/16);
@@ -293,7 +296,7 @@ sub Init($) {
     #-- sleeping for some time
     select(undef,undef,undef,0.5);
   }
-  if( $ret == 0 ){
+  if( $ret == 1 ){
     $interface=undef;
     $ress .= "not detected, answer was ";
     for($i=0;$i<length($res);$i++){

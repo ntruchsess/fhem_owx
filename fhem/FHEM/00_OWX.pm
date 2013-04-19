@@ -194,7 +194,6 @@ sub OWX_Define ($$) {
   return $ret if $ret;  
   	
   $hash->{OWX} = $owx;
-  $hash->{INTERFACE} = $owx->{INTERFACE};
   
 	#-- continue definition of OWX if interface define was ok, but init failed	
 	$ret = OWX_Init($hash);  
@@ -203,9 +202,7 @@ sub OWX_Define ($$) {
 }
 
 sub OWX_Ready ($) {
-	my ($hash) = @_;
-	my $owx = $hash->{OWX};
-	$owx->Init($hash) if (defined $owx); 
+	OWX_Init(@_);
 };
 
 sub OWX_Disconnected($) {
@@ -724,7 +721,7 @@ sub OWX_Init ($) {
   if (defined $owx) {
 	$hash->{INTERFACE} = $owx->{interface};
   	  #-- Third step: see, if a bus interface is detected
-  	if (!$owx->Init($hash)) {
+  	if ($owx->Init($hash)) {
       $hash->{PRESENT} = 0;
       readingsSingleUpdate($hash,"state","failed",1);
       $init_done = 1; 

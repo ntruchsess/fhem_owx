@@ -32,7 +32,6 @@ sub new() {
 	my ($class) = @_;
 
 	return bless {
-		hash      => $hash,
 		interface => "firmata",
 	    #-- module version
 		version => 4.0
@@ -64,8 +63,8 @@ sub Define($$) {
 #
 # Parameter hash = hash of bus master
 #
-# Return 1 : OK
-#        0 : not OK
+# Return 1 or Errormessage : not OK
+#        0 or undef : OK
 #
 ########################################################################################
 
