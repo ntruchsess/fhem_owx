@@ -28,20 +28,21 @@ use warnings;
 
 use Device::Firmata::Constants qw/ :all /;
 
-sub new($) {
-	my ($class,$hash) = @_;
+sub new() {
+	my ($class) = @_;
 
 	return bless {
-		hash => $hash,
+		hash      => $hash,
+		interface => "firmata",
 	    #-- module version
 		version => 4.0
 	}, $class;
 }
 
-sub Define($) {
-	my ($self,$def) = @_;
-	my $hash = $self->{hash};
-  	$hash->{INTERFACE} = "firmata";
+sub Define($$) {
+	my ($self,$hash,$def) = @_;
+	$self->{name} = $hash->{NAME};
+	$self->{hash} = $hash;
 
   	if (defined $main::modules{FRM}) {
 		main::AssignIoPort($hash);
@@ -57,26 +58,6 @@ sub Define($) {
   	}
 }
 
-sub Detect () {
-  my ($self) = @_;
-  my $hash = $self->{hash};
-
-  my $ret;
-  my $name = $hash->{NAME};
-  my $ress = "OWX: 1-Wire bus $name: interface ";
-
-  my $iodev = $hash->{IODev};
-  if (defined $iodev and defined $iodev->{FirmataDevice} and defined $iodev->{FD}) { #TODO $iodev->{FD} is not available on windows...
-    $ret=1;
-    $ress .= "Firmata detected in $iodev->{NAME}";
-  } else {
-	$ret=0;
-	$ress .= defined $iodev ? "$iodev->{NAME} is not connected to Firmata" : "not associated to any FRM device";
-  }
-  main::Log(1, $ress);
-  return $ret; 
-}
-
 ########################################################################################
 # 
 # Init - Initialize the 1-wire device
@@ -88,10 +69,9 @@ sub Detect () {
 #
 ########################################################################################
 
-sub Init()
+sub Init($)
 {
-	my ($self) = @_;
-	my $hash = $self->{hash};
+	my ($self,$hash) = @_;
 	
 	my $pin = $self->{pin};
 	my $ret = main::FRM_Init_Pin_Client($hash,[$pin],PIN_ONEWIRE);
@@ -103,10 +83,15 @@ sub Init()
 	if ( main::AttrVal($hash->{NAME},"buspower","") eq "parasitic" ) {
 		$firmata->onewire_config($pin,1);
 	}
-	$hash->{STATE}="Initialized";
 	$firmata->onewire_search($pin);
 	return undef;
 }
+
+sub Disconnect($)
+{
+	my ($hash) = @_;
+	$hash->{STATE} = "disconnected";
+};
 
 sub FRM_OWX_observer
 {
@@ -117,11 +102,9 @@ sub FRM_OWX_observer
 			my $owx_device = FRM_OWX_firmata_to_device($data->{device});
 			my $owx_data = pack "C*",@{$data->{data}};
 			$self->{replies}->{$owx_device} = $owx_data;
-			unless ($self->{synchronous}) {
-				my $request = $self->{requests}->{$owx_device};
-				my $data = pack "C*",@{$request->{'write'}};
-				main::OWX_AfterExecute( $self->{hash}, $request->{'reset'}, $owx_device, $data, $request->{'read'}, $owx_data );
-			}
+			my $request = $self->{requests}->{$owx_device};
+			my $data = pack "C*",@{$request->{'write'}};
+			main::OWX_AfterExecute( $self->{hash}, $request->{'reset'}, $owx_device, $data, $request->{'read'}, $owx_data );
 			last;			
 		};
 		($command eq "SEARCH_REPLY" or $command eq "SEARCH_ALARMS_REPLY") and do {
@@ -131,14 +114,10 @@ sub FRM_OWX_observer
 			};
 			if ($command eq "SEARCH_REPLY") {
 				$self->{devs} = \@owx_devices;
-				unless ($self->{synchronous}) {
-					main::OWX_AfterSearch($self->{hash},\@owx_devices);
-				};
+				main::OWX_AfterSearch($self->{hash},\@owx_devices);
 			} else {
 				$self->{alarmdevs} = \@owx_devices;
-				unless ($self->{synchronous}) {
-					main::OWX_AfterAlarms($self->{hash},\@owx_devices);
-				};
+				main::OWX_AfterAlarms($self->{hash},\@owx_devices);
 			};
 			last;
 		};

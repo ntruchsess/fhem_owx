@@ -141,6 +141,7 @@ sub OWX_Initialize ($) {
   $hash->{UndefFn} = "OWX_Undef";
   $hash->{GetFn}   = "OWX_Get";
   $hash->{SetFn}   = "OWX_Set";
+  $hash->{ReadyFn} = "OWX_Ready";
   $hash->{InitFn}  = "OWX_Init";
   $hash->{AttrList}= "loglevel:0,1,2,3,4,5,6 dokick:0,1 IODev";
 }
@@ -178,24 +179,25 @@ sub OWX_Define ($$) {
   #-- check if we have a serial device attached
   if ( $dev =~ m|$SER_regexp|i){  
     require "$attr{global}{modpath}/FHEM/11_OWX_SER.pm";
-    $owx = OWX_SER->new($hash);
+    $owx = OWX_SER->new();
   #-- check if we have a COC/CUNO interface attached  
   }elsif( (defined $defs{dev} && (defined( $defs{$dev}->{VERSION} ) ? $defs{$dev}->{VERSION} : "") =~ m/CSM|CUNO/ )){
     require "$attr{global}{modpath}/FHEM/11_OWX_CCC.pm";
-    $owx = OWX_CCC->new($hash);
+    $owx = OWX_CCC->new();
   #-- check if we are connecting to Arduino (via FRM):
   } elsif ($dev =~ /^\d{1,2}$/) {
   	require "$attr{global}{modpath}/FHEM/11_OWX_FRM.pm";
-    $owx = OWX_FRM->new($hash);
+    $owx = OWX_FRM->new();
   } else {
     return "OWX: Define failed, unable to identify interface type $dev"
   };
   
-  my $ret = $owx->Define($def);
+  my $ret = $owx->Define($hash,$def);
   #-- cancel definition of OWX if interface define fails 
   return $ret if $ret;  
   	
   $hash->{OWX} = $owx;
+  $hash->{INTERFACE} = $owx->{INTERFACE};
   
   #-- continue definition of OWX if interface define was ok, but init failed	
   $ret = OWX_Init($hash);  
@@ -203,6 +205,18 @@ sub OWX_Define ($$) {
     if ($ret);
   return undef;
 }
+
+sub OWX_Ready ($) {
+	my ($hash) = @_;
+	my $owx = $hash->{OWX};
+	$owx->Init($hash) if (defined $owx); 
+};
+
+sub OWX_Disconnected($) {
+	my ($hash) = @_;
+	my $owx = $hash->{OWX};
+	$owx->Disconnect($hash) if (defined $owx); 
+};	
 
 ########################################################################################
 #
@@ -623,6 +637,7 @@ sub OWX_AfterSearch($$) {
       }
     }
   }
+  }
 
   #-- final step: Undefine all 1-Wire devices which 
   #   are autocreated and
@@ -696,8 +711,8 @@ sub OWX_Get($@) {
 #
 # Parameter hash = hash of bus master
 #
-# Return 1 : OK
-#        0 : not OK
+# Return 0 or undef : OK
+#        1 or Errormessage : not OK
 #
 ########################################################################################
 
@@ -708,23 +723,17 @@ sub OWX_Init ($) {
   my $owx = $hash->{OWX};
   
   if (defined $owx) {
+	$hash->{INTERFACE} = $owx->{interface};
   	  #-- Third step: see, if a bus interface is detected
-  	if (!($owx->Detect())) {
+  	if (!$owx->Init($hash)) {
       $hash->{PRESENT} = 0;
       readingsSingleUpdate($hash,"state","failed",1);
       $init_done = 1; 
-      return "OWX_Detect failed";
+      return "OWX_Init failed";
     }
-  	my $ret = $owx->Init();
-  	return $ret if ($ret);
+   	$hash->{INTERFACE} = $owx->{interface};
   } else {
-    #-- interface error
-  	my $owx_interface = $hash->{INTERFACE};
-	if( !(defined($owx_interface))){
-      return "OWX: Init called with undefined interface";
-	} else {
-      return "OWX: Init called with unknown interface $owx_interface";
-	}
+    return "OWX: Init called with undefined interface";
   }
   
   #-- Fourth step: discovering devices on the bus
