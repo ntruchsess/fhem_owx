@@ -230,17 +230,17 @@ sub OWX_Alarms ($) {
 
 	#-- get the interface
 	my $name          = $hash->{NAME};
-	my $owx           = $hash->{ASYNC};
+	my $async           = $hash->{ASYNC};
 	my $res;
 
-	if (defined $owx) {
+	if (defined $async) {
 		delete $hash->{alarmed};
-		$owx->alarms();
+		$async->alarms();
 		my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
 		for (my $i=0;$i<$times;$i++) {
 			if(! defined $hash->{alarmed} ) {
 				select (undef,undef,undef,0.05);
-				$owx->poll($hash);
+				$async->poll($hash);
 			} else {
 				return $hash->{alarmed};
 			};
@@ -259,7 +259,7 @@ sub OWX_Alarms ($) {
 sub OWX_AfterAlarms($$) {
   my ($hash,$alarmed_devs) = @_;
   my @owx_alarm_names=();
-  my $name          = $hash->{NAME};
+  my $name = $hash->{NAME};
   $hash->{ALARMDEVS} = $alarmed_devs;
   if( $alarmed_devs == 0){
     $hash->{alarmed} = "OWX: No alarmed 1-Wire devices found on bus $name";
@@ -307,18 +307,18 @@ sub OWX_Complex ($$$$) {
   my $name   = $hash->{NAME};
   
   #-- get the interface
-  my $owx = $hash->{ASYNC};
+  my $async = $hash->{ASYNC};
 
-  if (defined $owx) {
+  if (defined $async) {
   	delete $hash->{replies}{$owx_dev}{$data};
-	$owx->execute( 0, $owx_dev, $data, $numread, 0 );
+	$async->execute( 0, $owx_dev, $data, $numread, 0 );
 	my $result = "000000000".$data;
 	if ($numread > 0) {
 		my $times = AttrVal($hash,"timeout",1000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
 		for (my $i=0;$i<$times;$i++) {
 			if(! defined $hash->{replies}{$owx_dev}{$data}) {
 				select (undef,undef,undef,0.05);
-				$owx->poll($hash);
+				$async->poll($hash);
 			} else {
 				$result .= $hash->{replies}{$owx_dev}{$data};
 				last;
@@ -512,17 +512,17 @@ sub OWX_Discover ($) {
 	my $ow_dev;
   
 	#-- get the interface
-	my $owx = $hash->{ASYNC};
+	my $async = $hash->{ASYNC};
 
 	#-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
-	if (defined $owx) {
+	if (defined $async) {
 		delete $hash->{discovered};
-		$owx->search();
+		$async->search();
 		my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
 		for (my $i=0;$i<$times;$i++) {
 			if(! defined $hash->{discovered} ) {
 				select (undef,undef,undef,0.05);
-				$owx->poll($hash);
+				$async->poll($hash);
 			} else {
 				return $hash->{discovered};
 			};
@@ -544,7 +544,7 @@ sub OWX_AfterSearch($$) {
   my ($chip,$acstring,$acname,$exname);
   my $ret= "";
   my @owx_names=();
-	
+  
   if (defined $owx_devs and (ref($owx_devs) eq "ARRAY")) {
   	$hash->{DEVS} = $owx_devs;
     #-- Go through all devices found on this bus
@@ -632,7 +632,6 @@ sub OWX_AfterSearch($$) {
         } 
       }
     }
-  }
   }
 
   #-- final step: Undefine all 1-Wire devices which 
@@ -813,10 +812,10 @@ sub OWX_Reset ($) {
 	my ($hash)=@_;
   
 	#-- get the interface
-	my $owx           = $hash->{OWX};
+	my $async = $hash->{ASYNC};
   
-	if (defined $owx) {
-		return $owx->execute(1, undef, undef, undef, undef );
+	if (defined $async) {
+		return $async->execute(1, undef, "", 0, undef );
 	} else {  	
 		#-- interface error
 		my $owx_interface = $hash->{INTERFACE};

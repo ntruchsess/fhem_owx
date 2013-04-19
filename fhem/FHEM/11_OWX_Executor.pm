@@ -76,17 +76,19 @@ sub poll($) {
 			RESPONSE_HANDLER: {
 				
 				$command eq SEARCH and do {
-					OWX_AfterSearch($hash,$item->{devices});
+					my @devices = split(/;/,$item->{devices});
+					main::OWX_AfterSearch($hash,\@devices);
 					last;
 				};
 				
 				$command eq ALARMS and do {
-					OWX_AfterAlarms($hash,$item->{devices});
+					my @devices = split(/;/,$item->{devices});
+					main::OWX_AfterAlarms($hash,\@devices);
 					last;
 				};
 				
 				$command eq EXECUTE and do {
-					OWX_AfterExecute($hash,$item->{reset},$item->{address},$item->{writedata},$item->{numread},$item->{readdata});
+					main::OWX_AfterExecute($hash,$item->{reset},$item->{address},$item->{writedata},$item->{numread},$item->{readdata});
 					last;
 				};
 			};
@@ -126,16 +128,24 @@ sub run() {
 			
 			$command eq SEARCH and do {
 				my $devices = $owx->Discover();
-				$item->{success} = $devices ? 1 : 0;
-				$item->{devices} = $devices;
+				if (defined $devices) {
+					$item->{success} = 1;
+					$item->{devices} = join(';', @{$devices});
+				} else {
+					$item->{success} = 0;
+				}
 				$responses->enqueue($item);
 				last;
 			};
 			
 			$command eq ALARMS and do {
 				my $devices = $owx->Alarms();
-				$item->{success} = $devices ? 1 : 0;
-				$item->{devices} = $devices;
+				if (defined $devices) {
+					$item->{success} = 1;
+					$item->{devices} = join(';', @{$devices});
+				} else {
+					$item->{success} = 0;
+				}
 				$responses->enqueue($item);
 				last;
 			};
@@ -145,9 +155,15 @@ sub run() {
 					$owx->Reset();
 				};
 				my $res = $owx->Complex($item->{address},$item->{writedata},$item->{numread});
-				$item->{success} = $res ? 1 : 0;
-				$item->{readdata} = $res;
-				$responses->enqueue($item); #TODO: handle delay...
+				if ($res) {
+					$item->{success} = 1;
+					my $writelen = split (//,$item->{writedata});
+					my @result = split (//, $res);
+					$item->{readdata} = 9+$writelen < @result ? substr($res,9+$writelen) : "";
+					$responses->enqueue($item); #TODO: handle delay...
+				} else {
+					$item->{success} = 0;
+				}
 				last;
 			};
 			

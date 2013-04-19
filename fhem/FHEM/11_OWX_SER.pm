@@ -49,7 +49,9 @@ sub new($) {
 		LastFamilyDiscrepancy => 0,
 		LastDeviceFlag => 0,
 		#-- module version
-		version => 4.0
+		version => 4.0,
+		alarmdevs => [],
+		devs => []
 	}, $class;
 }
 
@@ -100,10 +102,10 @@ sub Alarms () {
   #-- Discover all alarmed devices on the 1-Wire bus
   my $res = $self->First("alarm");
   while( $self->{LastDeviceFlag}==0 && $res != 0){
-    $res = $res & $self->SER_Next("alarm");
+    $res = $res & $self->Next("alarm");
   }
-  main::Log(1, " Alarms = ".join(' ',@{$self->{ALARMDEVS}}));
-  return $self->{ALARMDEVS};
+  main::Log(1, " Alarms = ".join(' ',@{$self->{alarmdevs}}));
+  return $self->{alarmdevs};
 } 
 
 ########################################################################################
@@ -210,7 +212,7 @@ sub Discover () {
   while( $self->{LastDeviceFlag}==0 && $res!=0 ){
     $res = $res & $self->Next("discover"); 
   }
-  return $self->{DEVS};
+  return $self->{devs};
 }
 
 ########################################################################################
@@ -507,7 +509,7 @@ sub Search ($) {
       }
     }
     push(@owx_fams,substr($dev,0,2)) if( !$famfnd );
-    foreach (@{$self->{DEVS}}){
+    foreach (@{$self->{devs}}){
       if( $dev eq $_ ){        
         #-- if present, set the last device found flag
         $self->{LastDeviceFlag}=1;
@@ -516,15 +518,15 @@ sub Search ($) {
     }
     if( $self->{LastDeviceFlag}!=1 ){
       #-- push to list
-      push(@{$self->{DEVS}},$dev);
+      push(@{$self->{devs}},$dev);
       main::Log(5, "OWX_SER::Search: new device found $dev");
     }  
     return 1;
     
   #-- mode was to discover alarm devices 
   } else {
-    for(my $i=0;$i<@{$self->{ALARMDEVS}};$i++){
-      if( $dev eq ${$self->{ALARMDEVS}}[$i] ){        
+    for(my $i=0;$i<@{$self->{alarmdevs}};$i++){
+      if( $dev eq ${$self->{alarmdevs}}[$i] ){        
         #-- if present, set the last device found flag
         $self->{LastDeviceFlag}=1;
         last;
@@ -532,7 +534,7 @@ sub Search ($) {
     }
     if( $self->{LastDeviceFlag}!=1 ){
     #--push to list
-      push(@{$self->{ALARMDEVS}},$dev);
+      push(@{$self->{alarmdevs}},$dev);
       main::Log(5, "OWX_SER::Search: new alarm device found $dev");
     }  
     return 1;
