@@ -23,7 +23,8 @@ sub new($) {
 	return bless {
 		requests     => $requests,
 		responses    => $responses,
-		workerthread => $thr
+		workerthread => $thr,
+		owx => $owx
 	}, $class;
 }
 
@@ -54,13 +55,14 @@ sub execute($$$$$$) {
 	);
 };
 
-sub exit() {
-	my ( $self ) = @_;
+sub exit($) {
+	my ( $self,$hash ) = @_;
 	$self->{requests}->enqueue(
 		{
 			command => EXIT
 		}
 	);
+	$self->{owx}->Disconnect($hash);
 }
 
 sub poll($) {
@@ -93,7 +95,7 @@ sub poll($) {
 				};
 			};
 		} else {
-			#response is error
+			main::OWX_Disconnected($hash);
 		};
 	};
 };
@@ -155,14 +157,20 @@ sub run() {
 					$owx->Reset();
 				};
 				my $res = $owx->Complex($item->{address},$item->{writedata},$item->{numread});
-				if ($res) {
-					$item->{success} = 1;
-					my $writelen = split (//,$item->{writedata});
-					my @result = split (//, $res);
-					$item->{readdata} = 9+$writelen < @result ? substr($res,9+$writelen) : "";
-					$responses->enqueue($item); #TODO: handle delay...
+				if (defined $res) {
+					if (defined $item->{address}) {
+						$item->{success} = 1;
+						my $writelen = split (//,$item->{writedata});
+						my @result = split (//, $res);
+						$item->{readdata} = 9+$writelen < @result ? substr($res,9+$writelen) : "";
+						$responses->enqueue($item);
+					}
+					if ($item->{delay}) {
+						select (undef,undef,undef,$item->{delay}/1000);
+					}
 				} else {
 					$item->{success} = 0;
+					$responses->enqueue($item);
 				}
 				last;
 			};

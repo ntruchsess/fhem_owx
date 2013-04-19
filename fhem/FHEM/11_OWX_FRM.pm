@@ -225,7 +225,9 @@ sub execute($$$$$) {
 	return undef;
 };
 
-sub exit() {
+sub exit($) {
+	my ($self,$hash) = @_;
+	#TODO handle disconnect...
 };
 
 sub poll($) {

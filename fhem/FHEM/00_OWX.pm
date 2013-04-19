@@ -207,8 +207,12 @@ sub OWX_Ready ($) {
 
 sub OWX_Disconnected($) {
 	my ($hash) = @_;
-	my $owx = $hash->{OWX};
-	$owx->Disconnect($hash) if (defined $owx); 
+	my $async = $hash->{ASYNC};
+	main::Log (1, "OWX_Disconnected");
+	if (defined $async) {
+		$async->exit($hash);
+		$hash->{ASYNC} = undef;
+	};  
 };	
 
 ########################################################################################
@@ -959,8 +963,7 @@ sub OWX_AfterExecute($$$$$$) {
 			&& defined( $main::defs{$d}{ROM_ID} )
 			&& defined( $main::defs{$d}{IODev} ) 
 			&& $main::defs{$d}{IODev} == $hash 
-			&& $main::defs{$d}{ROM_ID} eq $owx_dev )
-		{
+			&& $main::defs{$d}{ROM_ID} eq $owx_dev ) {
 			main::Log(1,"AfterExecute: match $owx_dev");
 			if ($main::defs{$d}{AfterExecuteFn}) {
 				my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $reset, $owx_dev, $data, $numread, $readdata);

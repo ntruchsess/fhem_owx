@@ -313,7 +313,8 @@ sub Init($) {
 sub Disconnect($) {
 	my ($self,$hash) = @_;
 	main::DevIo_Disconnected($hash);
-	delete $self->{hwdevice} if (defined $self->{hwdevice});	
+	delete $self->{hwdevice} if (defined $self->{hwdevice});
+	$self->{interface} = "serial";
 }	
 
 ########################################################################################
@@ -686,7 +687,7 @@ sub Query_2480 ($$) {
   $n=0;                                                
   for($l=0;$l<$retlen;$l+=$m) {                            
     my ($count_in, $string_part) = $hwdevice->read(48);  
-    return undef if (not defined $string_part);
+    return undef if (not defined $count_in or not defined $string_part);
     $string_in .= $string_part;                            
     $m = $count_in;		
   	$n++;
