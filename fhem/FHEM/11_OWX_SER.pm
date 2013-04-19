@@ -35,11 +35,10 @@ use warnings;
 ########################################################################################
 
 sub new($) {
-	my ($class,$hash) = @_;
+	my ($class) = @_;
 	
 	return bless {
-		#-- OWX device
-		hash => $hash,
+  		interface => "serial",
 		#-- baud rate serial interface
 		baud => 9600,
 		#-- 16 byte search string
@@ -50,7 +49,9 @@ sub new($) {
 		LastFamilyDiscrepancy => 0,
 		LastDeviceFlag => 0,
 		#-- module version
-		version => 4.0
+		version => 4.0,
+		alarmdevs => [],
+		devs => []
 	}, $class;
 }
 
@@ -68,11 +69,11 @@ sub new($) {
 #
 ########################################################################################
 
-sub Define ($) {
-	my ($self,$def) = @_;
-	my $hash = $self->{hash};
-	
+sub Define ($$) {
+	my ($self,$hash,$def) = @_;
 	my @a = split("[ \t][ \t]*", $def);
+
+	$self->{name} = $hash->{NAME};
 
 	#-- check syntax
 	if(int(@a) < 3){
@@ -84,101 +85,7 @@ sub Define ($) {
     if ( $dev !~ m/\@\d*/ ){
       $hash->{DeviceName} = $dev."\@9600";
     }
-    
-    #-- Second step in case of serial device: open the serial device to test it
-    my $msg = "OWX_SER: Serial device $dev";
-    my $ret = main::DevIo_OpenDev($hash,0,undef);
-    my $hwdevice = $hash->{USBDev};
-    if(!defined($hwdevice)){
-      main::Log(1, $msg." not defined");
-      return "OWX_SER: Can't open serial device $dev: $!"
-    } else {
-      main::Log(1,$msg." defined");
-    }
-    $hwdevice->reset_error();
-    $hwdevice->baudrate(9600);
-    $hwdevice->databits(8);
-    $hwdevice->parity('none');
-    $hwdevice->stopbits(1);
-    $hwdevice->handshake('none');
-    $hwdevice->write_settings;
-    #-- store with OWX device
-    $hash->{INTERFACE} = "serial";
-    $hash->{HWDEVICE}   = $hwdevice;
     return undef;
-}
-
-########################################################################################
-#
-# Detect - Find out if we have the proper interface
-#
-# Return 1 if ok, otherwise 0
-#
-########################################################################################
-
-sub Detect () {
-  my ($self) = @_;
-  my $hash = $self->{hash};
-  
-  my ($i,$j,$k,$l,$res,$ret,$ress);
-  my $name = $hash->{NAME};
-  my $ress0 = "OWX_SER::Detect 1-Wire bus $name: interface ";
-  $ress     = $ress0;
-
-  my $interface;
-  
-  #-- timing byte for DS2480
-  $self->Query_2480("\xC1",1);
-  
-  #-- Max 4 tries to detect an interface
-  for($l=0;$l<100;$l++) {
-    #-- write 1-Wire bus (Fig. 2 of Maxim AN192)
-    $res = $self->Query_2480("\x17\x45\x5B\x0F\x91",5);
-    
-    #-- process 4/5-byte string for detection
-    if( !defined($res)){
-      $res="";
-      $ret=0;
-    }elsif( ($res eq "\x16\x44\x5A\x00\x90") || ($res eq "\x16\x44\x5A\x00\x93")){
-      $ress .= "master DS2480 detected for the first time";
-      $interface="DS2480";
-      $ret=1;
-    } elsif( $res eq "\x17\x45\x5B\x0F\x91"){
-      $ress .= "master DS2480 re-detected";
-      $interface="DS2480";
-      $ret=1;
-    } elsif( ($res eq "\x17\x0A\x5B\x0F\x02") || ($res eq "\x00\x17\x0A\x5B\x0F\x02") || ($res eq "\x30\xf8\x00") || ($res eq "\x06\x00\x09\x07\x80")){
-      $ress .= "passive DS9097 detected";
-      $interface="DS9097";
-      $ret=1;
-    } else {
-      $ret=0;
-    }
-    last 
-      if( $ret==1 );
-    $ress .= "not found, answer was ";
-    for($i=0;$i<length($res);$i++){
-      $j=int(ord(substr($res,$i,1))/16);
-      $k=ord(substr($res,$i,1))%16;
-      $ress.=sprintf "0x%1x%1x ",$j,$k;
-    }
-    main::Log(1, $ress);
-    $ress = $ress0;
-    #-- sleeping for some time
-    select(undef,undef,undef,0.5);
-  }
-  if( $ret == 0 ){
-    $interface=undef;
-    $ress .= "not detected, answer was ";
-    for($i=0;$i<length($res);$i++){
-      $j=int(ord(substr($res,$i,1))/16);
-      $k=ord(substr($res,$i,1))%16;
-      $ress.=sprintf "0x%1x%1x ",$j,$k;
-    }
-  }
-  $hash->{INTERFACE} = $interface;
-  main::Log(1, $ress);
-  return $ret; 
 }
 
 ########################################################################################
@@ -191,15 +98,14 @@ sub Detect () {
 
 sub Alarms () {
   my ($self) = @_;
-  my $hash = $self->{hash};
   
   #-- Discover all alarmed devices on the 1-Wire bus
   my $res = $self->First("alarm");
   while( $self->{LastDeviceFlag}==0 && $res != 0){
-    $res = $res & $self->SER_Next("alarm");
+    $res = $res & $self->Next("alarm");
   }
-  main::Log(1, " Alarms = ".join(' ',@{$hash->{ALARMDEVS}}));
-  return( int(@{$hash->{ALARMDEVS}}) );
+  main::Log(1, " Alarms = ".join(' ',@{$self->{alarmdevs}}));
+  return $self->{alarmdevs};
 } 
 
 ########################################################################################
@@ -218,7 +124,6 @@ sub Alarms () {
 
 sub Complex ($$$) {
   my ($self,$dev,$data,$numread) =@_;
-  my $hash = $self->{hash};
   
   my $select;
   my $res  = "";
@@ -226,8 +131,10 @@ sub Complex ($$$) {
   my ($i,$j,$k);
   
   #-- get the interface
-  my $interface = $hash->{INTERFACE};
-  my $hwdevice  = $hash->{HWDEVICE};
+  my $interface = $self->{interface};
+  my $hwdevice  = $self->{hwdevice};
+  
+  return 0 unless (defined $hwdevice);
   
   #-- has match ROM part
   if( $dev ){
@@ -271,6 +178,8 @@ sub Complex ($$$) {
     $res = $self->Block_9097($select);
   }
   
+  return undef if (not defined $res);
+  
   #-- for debugging
   if( $main::owx_debug > 1){
     $res2 = "OWX_SER::Complex: Receiving   ";
@@ -297,27 +206,112 @@ sub Complex ($$$) {
 
 sub Discover () {
   my ($self) = @_;
-  my $hash = $self->{hash};
   
   #-- Discover all alarmed devices on the 1-Wire bus
   my $res = $self->First("discover");
   while( $self->{LastDeviceFlag}==0 && $res!=0 ){
     $res = $res & $self->Next("discover"); 
   }
-  return( @{$hash->{DEVS}} == 0);
+  return $self->{devs};
 }
 
 ########################################################################################
 # 
 # Init - Initialize the 1-wire device
 #
-# Return undef if ok
+# Return 1 if ok, 0 or undef otherwise
 #
 ########################################################################################
 
-sub Init() {
-  return undef;
+sub Init($) {
+  my ($self,$hash) = @_;
+  #-- Second step in case of serial device: open the serial device to test it
+  my $msg = "OWX_SER: Serial device $hash->{DeviceName}";
+  main::DevIo_OpenDev($hash,0,undef);
+  my $hwdevice = $hash->{USBDev};
+  if(!defined($hwdevice)){
+    main::Log(1, $msg." not defined: $!");
+    return undef;
+  } else {
+    main::Log(1,$msg." defined");
+  }
+  $hwdevice->reset_error();
+  $hwdevice->baudrate(9600);
+  $hwdevice->databits(8);
+  $hwdevice->parity('none');
+  $hwdevice->stopbits(1);
+  $hwdevice->handshake('none');
+  $hwdevice->write_settings;
+  #-- store with OWX device
+  $self->{hwdevice}   = $hwdevice;
+  
+  #-- Third step detect busmaster on serial interface
+  
+  my ($i,$j,$k,$l,$res,$ret,$ress);
+  my $name = $self->{name};
+  my $ress0 = "OWX_SER::Detect 1-Wire bus $name: interface ";
+  $ress     = $ress0;
+
+  my $interface;
+  
+  #-- timing byte for DS2480
+  $self->Query_2480("\xC1",1);
+  
+  #-- Max 4 tries to detect an interface
+  for($l=0;$l<100;$l++) {
+    #-- write 1-Wire bus (Fig. 2 of Maxim AN192)
+    $res = $self->Query_2480("\x17\x45\x5B\x0F\x91",5);
+    #-- process 4/5-byte string for detection
+    if( !defined($res)){
+      $res="";
+      $ret=0;
+    }elsif( ($res eq "\x16\x44\x5A\x00\x90") || ($res eq "\x16\x44\x5A\x00\x93")){
+      $ress .= "master DS2480 detected for the first time";
+      $interface="DS2480";
+      $ret=1;
+    } elsif( $res eq "\x17\x45\x5B\x0F\x91"){
+      $ress .= "master DS2480 re-detected";
+      $interface="DS2480";
+      $ret=1;
+    } elsif( ($res eq "\x17\x0A\x5B\x0F\x02") || ($res eq "\x00\x17\x0A\x5B\x0F\x02") || ($res eq "\x30\xf8\x00") || ($res eq "\x06\x00\x09\x07\x80")){
+      $ress .= "passive DS9097 detected";
+      $interface="DS9097";
+      $ret=1;
+    } else {
+      $ret=0;
+    }
+    last 
+      if( $ret==1 );
+    $ress .= "not found, answer was ";
+    for($i=0;$i<length($res);$i++){
+      $j=int(ord(substr($res,$i,1))/16);
+      $k=ord(substr($res,$i,1))%16;
+      $ress.=sprintf "0x%1x%1x ",$j,$k;
+    }
+    main::Log(1, $ress);
+    $ress = $ress0;
+    #-- sleeping for some time
+    select(undef,undef,undef,0.5);
+  }
+  if( $ret == 0 ){
+    $interface=undef;
+    $ress .= "not detected, answer was ";
+    for($i=0;$i<length($res);$i++){
+      $j=int(ord(substr($res,$i,1))/16);
+      $k=ord(substr($res,$i,1))%16;
+      $ress.=sprintf "0x%1x%1x ",$j,$k;
+    }
+  }
+  $self->{interface} = $interface;
+  main::Log(1, $ress);
+  return $ret; 
 }
+
+sub Disconnect($) {
+	my ($self,$hash) = @_;
+	main::DevIo_Disconnected($hash);
+	delete $self->{hwdevice} if (defined $self->{hwdevice});	
+}	
 
 ########################################################################################
 # 
@@ -332,10 +326,9 @@ sub Init() {
 
 sub Reset () {
   my ($self)=@_;
-  my $hash = $self->{hash};
   
   #-- get the interface
-  my $interface = $hash->{INTERFACE};
+  my $interface = $self->{interface};
   
    #-- interface error
   if(  $interface eq "DS2480"){
@@ -358,7 +351,6 @@ sub Reset () {
 
 sub Verify ($) {
   my ($self,$dev) = @_;
-  my $hash = $self->{hash};
   my @rom_id;
   my $i;
     
@@ -447,13 +439,14 @@ sub Next ($) {
 
 sub Search ($) {
   my ($self,$mode)=@_;
-  my $hash = $self->{hash};
   
   my @owx_fams=();
   
   #-- get the interface
-  my $interface = $hash->{INTERFACE};
-  my $hwdevice  = $hash->{HWDEVICE};
+  my $interface = $self->{interface};
+  my $hwdevice  = $self->{hwdevice};
+  
+  return 0 unless (defined $hwdevice);
   
   #-- if the last call was the last one, no search 
   if ($self->{LastDeviceFlag}==1){
@@ -516,7 +509,7 @@ sub Search ($) {
       }
     }
     push(@owx_fams,substr($dev,0,2)) if( !$famfnd );
-    foreach (@{$hash->{DEVS}}){
+    foreach (@{$self->{devs}}){
       if( $dev eq $_ ){        
         #-- if present, set the last device found flag
         $self->{LastDeviceFlag}=1;
@@ -525,15 +518,15 @@ sub Search ($) {
     }
     if( $self->{LastDeviceFlag}!=1 ){
       #-- push to list
-      push(@{$hash->{DEVS}},$dev);
+      push(@{$self->{devs}},$dev);
       main::Log(5, "OWX_SER::Search: new device found $dev");
     }  
     return 1;
     
   #-- mode was to discover alarm devices 
   } else {
-    for(my $i=0;$i<@{$hash->{ALARMDEVS}};$i++){
-      if( $dev eq ${$hash->{ALARMDEVS}}[$i] ){        
+    for(my $i=0;$i<@{$self->{alarmdevs}};$i++){
+      if( $dev eq ${$self->{alarmdevs}}[$i] ){        
         #-- if present, set the last device found flag
         $self->{LastDeviceFlag}=1;
         last;
@@ -541,7 +534,7 @@ sub Search ($) {
     }
     if( $self->{LastDeviceFlag}!=1 ){
     #--push to list
-      push(@{$hash->{ALARMDEVS}},$dev);
+      push(@{$self->{alarmdevs}},$dev);
       main::Log(5, "OWX_SER::Search: new alarm device found $dev");
     }  
     return 1;
@@ -567,7 +560,6 @@ sub Search ($) {
 
 sub Block_2480 ($) {
   my ($self,$data) =@_;
-  my $hash = $self->{hash};
   
    my $data2="";
    my $retlen = length($data);
@@ -602,7 +594,6 @@ sub Block_2480 ($) {
 
 sub Level_2480 ($) {
   my ($self,$newlevel) =@_;
-  my $hash = $self->{hash};
   my $cmd="";
   my $retlen=0;
   #-- if necessary, prepend E3 character for command mode
@@ -614,6 +605,7 @@ sub Level_2480 ($) {
     $retlen+=3;
     #-- write 1-Wire bus
     my $res = $self->Query_2480($cmd,$retlen);
+    return undef if (not defined $res);
     #-- process result
     my $r1  = ord(substr($res,0,1)) & 236;
     my $r2  = ord(substr($res,1,1)) & 236;
@@ -630,6 +622,7 @@ sub Level_2480 ($) {
     $retlen+=2;
     #-- write 1-Wire bus
     my $res = $self->Query_2480($cmd,$retlen);
+    return undef if (not defined $res);
     #-- process result
     if( $res eq "\x3E" ){
       main::Log(5, "OWX_SER: Level change OK");
@@ -654,13 +647,14 @@ sub Level_2480 ($) {
 sub Query_2480 ($$) {
 	
   my ($self,$cmd,$retlen) = @_;
-  my $hash = $self->{hash};
   my ($i,$j,$k,$l,$m,$n);
   my $string_in = "";
   my $string_part;
   
   #-- get hardware device
-  my $hwdevice = $hash->{HWDEVICE};
+  my $hwdevice = $self->{hwdevice};
+  
+  return undef unless (defined $hwdevice);
   
   $hwdevice->baudrate($self->{baud});
   $hwdevice->write_settings;
@@ -689,6 +683,7 @@ sub Query_2480 ($$) {
   $n=0;                                                
   for($l=0;$l<$retlen;$l+=$m) {                            
     my ($count_in, $string_part) = $hwdevice->read(48);  
+    return undef if (not defined $string_part);
     $string_in .= $string_part;                            
     $m = $count_in;		
   	$n++;
@@ -730,9 +725,8 @@ sub Query_2480 ($$) {
 sub Reset_2480 () {
 
   my ($self)=@_;
-  my $hash = $self->{hash};
   my $cmd="";
-  my $name     = $hash->{NAME};
+  my $name     = $self->{name};
  
   my ($res,$r1,$r2);
   #-- if necessary, prepend \xE3 character for command mode
@@ -742,12 +736,14 @@ sub Reset_2480 () {
   $cmd  = $cmd."\xC5"; 
   #-- write 1-Wire bus
   $res = $self->Query_2480($cmd,1);
+  return undef if (not defined $res);
 
   #-- if not ok, try for max. a second time
   $r1  = ord(substr($res,0,1)) & 192;
   if( $r1 != 192){
     #Log(1, "Trying second reset";
     $res = $self->Query_2480($cmd,1);
+    return undef if (not defined $res);
   }
 
   #-- process result
@@ -756,7 +752,7 @@ sub Reset_2480 () {
     main::Log(3, "OWX_SER::Reset_2480 failure on bus $name");
     return 0;
   }
-  $hash->{ALARMED} = "no";
+  $self->{ALARMED} = "no";
   
   $r2 = ord(substr($res,0,1)) & 3;
   
@@ -765,7 +761,7 @@ sub Reset_2480 () {
     return 1;
   }elsif( $r2 ==2 ){
     main::Log(1, "OWX_SER::Reset_2480 Alarm presence detected on bus $name");
-    $hash->{ALARMED} = "yes";
+    $self->{ALARMED} = "yes";
   }
   return 1;
 }
@@ -785,7 +781,6 @@ sub Reset_2480 () {
 
 sub Search_2480 ($) {
   my ($self,$mode)=@_;
-  my $hash = $self->{hash};
   
   my ($sp1,$sp2,$response,$search_direction,$id_bit_number);
     
@@ -829,8 +824,10 @@ sub Search_2480 ($) {
   }
   #-- issue data mode \xE1, device ID, command mode \xE3 / end accelerator \xA5
   $sp2=sprintf("\xE1%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c\xE3\xA5",@{$self->{search}}); 
-  $response = $self->Query_2480($sp1,1); 
-  $response = $self->Query_2480($sp2,16);   
+  $response = $self->Query_2480($sp1,1);
+  return undef if (not defined $response); 
+  $response = $self->Query_2480($sp2,16);
+  return undef if (not defined $response);   
      
   #-- interpret the return data
   if( length($response)!=16 ) {
@@ -889,7 +886,6 @@ sub Search_2480 ($) {
 sub WriteBytePower_2480 ($) {
 
   my ($self,$dbyte) =@_;
-  my $hash = $self->{hash};
   
   my $cmd="\x3F";
   my $ret="\x3E";
@@ -937,7 +933,6 @@ sub WriteBytePower_2480 ($) {
 
 sub Block_9097 ($) {
   my ($self,$data) =@_;
-  my $hash = $self->{hash};
   
    my $data2="";
    my $res=0;
@@ -961,10 +956,11 @@ sub Block_9097 ($) {
 sub Query_9097 ($) {
 
   my ($self,$cmd) = @_;
-  my $hash = $self->{hash};
   my ($i,$j,$k);
   #-- get hardware device 
-  my $hwdevice = $hash->{HWDEVICE};
+  my $hwdevice = $self->{hwdevice};
+  
+  return undef unless (defined $hwdevice);
   
   $hwdevice->baudrate($self->{baud});
   $hwdevice->write_settings;
@@ -987,6 +983,7 @@ sub Query_9097 ($) {
  
   #-- read the data
   my ($count_in, $string_in) = $hwdevice->read(48);
+  return undef if (not defined $string_in);
     
   if( $main::owx_debug > 2){
     my $res = "OWX_SER::Query_9097 Receiving ";
@@ -1016,12 +1013,12 @@ sub Query_9097 ($) {
 
 sub ReadBit_9097 () {
   my ($self) = @_;
-  my $hash = $self->{hash};
   
   #-- set baud rate to 115200 and query!!!
   my $sp1="\xFF";
   $self->{baud}=115200;
   my $res=$self->Query_9097($sp1);
+  return undef if (not defined $res);
   $self->{baud}=9600;
   #-- process result
   if( substr($res,0,1) eq "\xFF" ){
@@ -1045,7 +1042,6 @@ sub ReadBit_9097 () {
 sub Reset_9097 () {
 
   my ($self)=@_;
-  my $hash = $self->{hash};
   
   my $cmd="";
     
@@ -1053,6 +1049,7 @@ sub Reset_9097 () {
   $cmd="\xF0";
   #-- write 1-Wire bus
   my $res = $self->Query_9097($cmd);
+  return undef if (not defined $res);  
   #-- TODO: process result
   #-- may vary between 0x10, 0x90, 0xe0
   return 1;
@@ -1074,7 +1071,6 @@ sub Reset_9097 () {
 sub Search_9097 ($) {
 
   my ($self,$mode)=@_;
-  my $hash = $self->{hash};
   
   my ($sp1,$sp2,$response,$search_direction,$id_bit_number);
     
@@ -1088,6 +1084,7 @@ sub Search_9097 ($) {
   $self->{baud}=115200;
   $sp2="\x00\x00\x00\x00\xFF\xFF\xFF\xFF";
   $response = $self->Query_9097($sp2);
+  return undef if (not defined $response);
   $self->{baud}=9600;
   #-- issue the normal search command \xF0 or the alarm search command \xEC 
   #if( $mode ne "alarm" ){
@@ -1177,7 +1174,6 @@ sub Search_9097 ($) {
 
 sub TouchBit_9097 ($) {
   my ($self,$bit) = @_;
-  my $hash = $self->{hash};
   
   my $sp1;
   #-- set baud rate to 115200 and query!!!
@@ -1188,6 +1184,7 @@ sub TouchBit_9097 ($) {
   }
   $self->{baud}=115200;
   my $res=$self->Query_9097($sp1);
+  return undef if (not defined $res);
   $self->{baud}=9600;
   #-- process result
   my $sp2=substr($res,0,1);
@@ -1210,7 +1207,6 @@ sub TouchBit_9097 ($) {
 
 sub TouchByte_9097 ($) {
   my ($self,$byte) = @_;
-  my $hash = $self->{hash};
   
   my $loop;
   my $result=0;
@@ -1244,7 +1240,6 @@ sub TouchByte_9097 ($) {
 
 sub WriteBit_9097 ($) {
   my ($self,$bit) = @_;
-  my $hash = $self->{hash};
   
   my $sp1;
   #-- set baud rate to 115200 and query!!!
@@ -1255,6 +1250,7 @@ sub WriteBit_9097 ($) {
   }
   $self->{baud}=115200;
   my $res=$self->Query_9097($sp1);
+  return undef if (not defined $res);
   $self->{baud}=9600;
   #-- process result
   if( substr($res,0,1) eq $sp1 ){
@@ -1262,6 +1258,6 @@ sub WriteBit_9097 ($) {
   } else {
     return 0;
   } 
-}
+};
 
 1;
