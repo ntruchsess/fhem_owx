@@ -97,13 +97,14 @@ sub Define ($$) {
 sub Alarms () {
   my ($self) = @_;
   
+  $self->{alarmdevs} = [];
   #-- Discover all alarmed devices on the 1-Wire bus
   my $res = $self->First("alarm");
   while( $self->{LastDeviceFlag}==0 && $res != 0){
-    $res = $res & $self->SER_Next("alarm");
+    $res = $res & $self->Next("alarm");
   }
-  main::Log(1, " Alarms = ".join(' ',@{$self->{ALARMDEVS}}));
-  return $self->{ALARMDEVS};
+  main::Log(1, " Alarms = ".join(' ',@{$self->{alarmdevs}}));
+  return $self->{alarmdevs};
 } 
 
 ########################################################################################
@@ -217,7 +218,8 @@ sub Discover () {
 # 
 # Init - Initialize the 1-wire device
 #
-# Return 1 if ok, 0 or undef otherwise
+# Return 1 or Errormessage if not OK
+# 0 or undef if OK
 #
 ########################################################################################
 
@@ -229,7 +231,7 @@ sub Init($) {
   my $hwdevice = $hash->{USBDev};
   if(!defined($hwdevice)){
     main::Log(1, $msg." not defined: $!");
-    return undef;
+    return 1;
   } else {
     main::Log(1,$msg." defined");
   }
@@ -262,24 +264,24 @@ sub Init($) {
     #-- process 4/5-byte string for detection
     if( !defined($res)){
       $res="";
-      $ret=0;
+      $ret=1;
     }elsif( ($res eq "\x16\x44\x5A\x00\x90") || ($res eq "\x16\x44\x5A\x00\x93")){
       $ress .= "master DS2480 detected for the first time";
       $interface="DS2480";
-      $ret=1;
+      $ret=0;
     } elsif( $res eq "\x17\x45\x5B\x0F\x91"){
       $ress .= "master DS2480 re-detected";
       $interface="DS2480";
-      $ret=1;
+      $ret=0;
     } elsif( ($res eq "\x17\x0A\x5B\x0F\x02") || ($res eq "\x00\x17\x0A\x5B\x0F\x02") || ($res eq "\x30\xf8\x00") || ($res eq "\x06\x00\x09\x07\x80")){
       $ress .= "passive DS9097 detected";
       $interface="DS9097";
-      $ret=1;
-    } else {
       $ret=0;
+    } else {
+      $ret=1;
     }
     last 
-      if( $ret==1 );
+      if( $ret==0 );
     $ress .= "not found, answer was ";
     for($i=0;$i<length($res);$i++){
       $j=int(ord(substr($res,$i,1))/16);
@@ -291,7 +293,7 @@ sub Init($) {
     #-- sleeping for some time
     select(undef,undef,undef,0.5);
   }
-  if( $ret == 0 ){
+  if( $ret == 1 ){
     $interface=undef;
     $ress .= "not detected, answer was ";
     for($i=0;$i<length($res);$i++){
@@ -523,8 +525,8 @@ sub Search ($) {
     
   #-- mode was to discover alarm devices 
   } else {
-    for(my $i=0;$i<@{$self->{ALARMDEVS}};$i++){
-      if( $dev eq ${$self->{ALARMDEVS}}[$i] ){        
+    for(my $i=0;$i<@{$self->{alarmdevs}};$i++){
+      if( $dev eq ${$self->{alarmdevs}}[$i] ){        
         #-- if present, set the last device found flag
         $self->{LastDeviceFlag}=1;
         last;
@@ -532,7 +534,7 @@ sub Search ($) {
     }
     if( $self->{LastDeviceFlag}!=1 ){
     #--push to list
-      push(@{$self->{ALARMDEVS}},$dev);
+      push(@{$self->{alarmdevs}},$dev);
       main::Log(5, "OWX_SER::Search: new alarm device found $dev");
     }  
     return 1;
