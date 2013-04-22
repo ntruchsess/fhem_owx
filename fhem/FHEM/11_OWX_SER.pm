@@ -99,6 +99,7 @@ sub Define ($$) {
 sub Alarms () {
   my ($self) = @_;
   
+  $self->{alarmdevs} = [];
   #-- Discover all alarmed devices on the 1-Wire bus
   my $res = $self->First("alarm");
   while( $self->{LastDeviceFlag}==0 && $res != 0){

@@ -219,8 +219,8 @@ sub Discover () {
 # 
 # Init - Initialize the 1-wire device
 #
-# Return 1 : OK
-#        0 : not OK
+# Return 1 or Errormessage: not OK
+#        0 or undef: OK
 #
 ########################################################################################
 
@@ -232,9 +232,9 @@ sub Init () {
   my $hwdevice  = $self->{hwdevice};
   
   my $get = main::CallFn($hwdevice->{NAME}, "GetFn", $hwdevice, (" ", "raw", "ORm"));
-  return 0 if( !defined($get) );
-  return 0 if( length($get) < 13);
-  return 0 unless ( substr($get,9,4) eq "OK" );
+  return 1 if( !defined($get) );
+  return 1 if( length($get) < 13);
+  return 1 unless ( substr($get,9,4) eq "OK" );
 
   my ($ret,$ress);
   my $name = $hash->{NAME};
@@ -253,23 +253,23 @@ sub Init () {
   #-- process result for detection
   if( !defined($ob)){
     $ob="";
-    $ret=0;
+    $ret=1;
   #-- COC
   }elsif( $ob =~ m/.*CSM.*/){
     $interface="COC";
     $ress .= "DS2482 / COC detected in $hwdevice->{NAME}";
-    $ret=1;
+    $ret=0;
   #-- CUNO
   }elsif( $ob =~ m/.*CUNO.*/){
     $interface="CUNO";
      $ress .= "DS2482 / CUNO detected in $hwdevice->{NAME}";
-    $ret=1;
+    $ret=0;
   #-- something else
   } else {
-    $ret=0;
+    $ret=1;
   }
   #-- treat the failure cases
-  if( $ret == 0 ){
+  if( $ret == 1 ){
     $interface=undef;
     $ress .= "in $hwdevice->{NAME} could not be addressed, return was $ob";
   }
