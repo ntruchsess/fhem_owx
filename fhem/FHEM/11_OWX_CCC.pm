@@ -35,10 +35,10 @@ use warnings;
 ########################################################################################
 
 sub new($) {
-	my ($class,$hash) = @_;
+	my ($class) = @_;
 
 	return bless {
-		hash => $hash,
+		interface => "COC/CUNO",		
 	    #-- module version
 		version => 4.0
 	}, $class;
@@ -59,8 +59,7 @@ sub new($) {
 ########################################################################################
 
 sub Define($) {
-	my ($self,$def) = @_;
-	my $hash = $self->{hash};
+	my ($self,$hash,$def) = @_;
 	
 	my @a = split("[ \t][ \t]*", $def);
 
@@ -78,8 +77,7 @@ sub Define($) {
     if($hwdevice){
       main::Log(1,$msg." defined");
       #-- store with OWX device
-      $hash->{INTERFACE} = "COC/CUNO";
-      $hash->{HWDEVICE}    = $hwdevice;
+      $self->{hwdevice}    = $hwdevice;
       #-- loop for some time until the state is "Initialized"
       for(my $i=0;$i<6;$i++){
         last if( $hwdevice->{STATE} eq "Initialized");
@@ -94,62 +92,6 @@ sub Define($) {
       main::Log(1, $msg." not defined");
       return $msg." not defined";
     } 
-}
-
-########################################################################################
-#
-# Detect - Find out if we have the proper interface
-#
-# Return 1 if ok, otherwise 0
-#
-########################################################################################
-
-sub Detect () {
-  my ($self) = @_;
-  my $hash = $self->{hash};
-  
-  my ($ret,$ress);
-  my $name = $hash->{NAME};
-  my $ress0 = "OWX_CCC::Detect: 1-Wire bus $name interface ";
-  $ress     = $ress0;
-
-  #-- get the interface
-  my $interface;
-  my $hwdevice  = $hash->{HWDEVICE};
-  
-  select(undef,undef,undef,2);
-  #-- type of interface
-  main::CUL_SimpleWrite($hwdevice, "V");
-  select(undef,undef,undef,0.01);
-  my ($err,$ob) = ReadAnswer($hwdevice);
-  #my $ob = CallFn($owx_hwdevice->{NAME}, "GetFn", $owx_hwdevice, (" ", "raw", "V"));
-  #-- process result for detection
-  if( !defined($ob)){
-    $ob="";
-    $ret=0;
-  #-- COC
-  }elsif( $ob =~ m/.*CSM.*/){
-    $interface="COC";
-    $ress .= "DS2482 / COC detected in $hwdevice->{NAME}";
-    $ret=1;
-  #-- CUNO
-  }elsif( $ob =~ m/.*CUNO.*/){
-    $interface="CUNO";
-     $ress .= "DS2482 / CUNO detected in $hwdevice->{NAME}";
-    $ret=1;
-  #-- something else
-  } else {
-    $ret=0;
-  }
-  #-- treat the failure cases
-  if( $ret == 0 ){
-    $interface=undef;
-    $ress .= "in $hwdevice->{NAME} could not be addressed, return was $ob";
-  }
-  #-- store with OWX device
-  $hash->{INTERFACE} = $interface;
-  main::Log(1, $ress);
-  return $ret; 
 }
 
 ########################################################################################
@@ -181,13 +123,12 @@ sub Alarms () {
 
 sub Complex ($$$) {
   my ($self,$dev,$data,$numread) =@_;
-  my $hash = $self->{hash};
   
   my $select;
   my $res = "";
   
   #-- get the interface
-  my $hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $self->{hwdevice};
   
   #-- has match ROM part
   if( $dev ){
@@ -240,15 +181,14 @@ sub Complex ($$$) {
 
 sub Discover () {
   my ($self) = @_;
-  my $hash = $self->{hash};
   
   my $res;
   
   #-- get the interface
-  my $hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $self->{hwdevice};
   
   #-- zero the array
-  @{$hash->{DEVS}}=();
+  my @devs=();
   #-- reset the busmaster
   $self->Init();
   #-- get the devices
@@ -266,9 +206,9 @@ sub Discover () {
         $ddx .= substr($dx,14-2*$i,2);
       }
       $ddx .= ".".substr($dx,0,2);
-      push (@{$hash->{DEVS}},$ddx);
+      push (@devs,$ddx);
     }
-    return 1;
+    return \@devs;
   } else {
     main::Log(1, "OWX_CCC: No answer to ".$hwdevice->{NAME}." device search");
     return 0;
@@ -289,16 +229,54 @@ sub Init () {
   my $hash = $self->{hash};
   
   #-- get the interface
-  my $hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $self->{hwdevice};
   
-  my $ob = main::CallFn($hwdevice->{NAME}, "GetFn", $hwdevice, (" ", "raw", "ORm"));
-  return 0 if( !defined($ob) );
-  return 0 if( length($ob) < 13);
-  if( substr($ob,9,4) eq "OK" ){
-    return 1;
-  }else{
-    return 0
+  my $get = main::CallFn($hwdevice->{NAME}, "GetFn", $hwdevice, (" ", "raw", "ORm"));
+  return 0 if( !defined($get) );
+  return 0 if( length($get) < 13);
+  return 0 unless ( substr($get,9,4) eq "OK" );
+
+  my ($ret,$ress);
+  my $name = $hash->{NAME};
+  my $ress0 = "OWX_CCC::Detect: 1-Wire bus $name interface ";
+  $ress     = $ress0;
+
+  #-- get the interface
+  my $interface;
+  
+  select(undef,undef,undef,2);
+  #-- type of interface
+  main::CUL_SimpleWrite($hwdevice, "V");
+  select(undef,undef,undef,0.01);
+  my ($err,$ob) = ReadAnswer($hwdevice);
+  #my $ob = CallFn($owx_hwdevice->{NAME}, "GetFn", $owx_hwdevice, (" ", "raw", "V"));
+  #-- process result for detection
+  if( !defined($ob)){
+    $ob="";
+    $ret=0;
+  #-- COC
+  }elsif( $ob =~ m/.*CSM.*/){
+    $interface="COC";
+    $ress .= "DS2482 / COC detected in $hwdevice->{NAME}";
+    $ret=1;
+  #-- CUNO
+  }elsif( $ob =~ m/.*CUNO.*/){
+    $interface="CUNO";
+     $ress .= "DS2482 / CUNO detected in $hwdevice->{NAME}";
+    $ret=1;
+  #-- something else
+  } else {
+    $ret=0;
   }
+  #-- treat the failure cases
+  if( $ret == 0 ){
+    $interface=undef;
+    $ress .= "in $hwdevice->{NAME} could not be addressed, return was $ob";
+  }
+  #-- store with OWX device
+  $self->{interface} = $interface;
+  main::Log(1, $ress);
+  return $ret; 
 }
 
 
@@ -313,10 +291,9 @@ sub Init () {
 
 sub Reset () { 
   my ($self) = @_;
-  my $hash = $self->{hash};
   
   #-- get the interface
-  my $hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $self->{hwdevice};
   
   my $ob = main::CallFn($hwdevice->{NAME}, "GetFn", $hwdevice, (" ", "raw", "ORb"));
   
@@ -340,12 +317,11 @@ sub Reset () {
 
 sub Verify ($) {
   my ($self,$dev) = @_;
-  my $hash = $self->{hash};
   
   my $i;
     
   #-- get the interface
-  my $hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $self->{hwdevice};
   
   #-- Ask the COC/CUNO 
   main::CUL_SimpleWrite($hwdevice, "OCf");
@@ -445,13 +421,12 @@ sub ReadAnswer($)
 
 sub Receive ($) {
   my ($self,$numread) = @_;
-  my $hash = $self->{hash};
   
   my $res="";
   my $res2="";
   
   #-- get the interface
-  my $hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $self->{hwdevice};
   
   for( 
   my $i=0;$i<$numread;$i++){
@@ -511,14 +486,13 @@ sub Receive ($) {
 
 sub Send ($) {
   my ($self,$data) =@_;
-  my $hash = $self->{hash};
   
   my ($i,$j,$k);
   my $res  = "";
   my $res2 = "";
 
   #-- get the interface
-  my $hwdevice  = $hash->{HWDEVICE};
+  my $hwdevice  = $self->{hwdevice};
   
   for( $i=0;$i<length($data);$i++){
     $j=int(ord(substr($data,$i,1))/16);

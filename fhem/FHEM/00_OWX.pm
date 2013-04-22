@@ -197,7 +197,7 @@ sub OWX_Define ($$) {
   return $ret if $ret;  
   	
   $hash->{OWX} = $owx;
-  $hash->{INTERFACE} = $owx->{INTERFACE};
+  $hash->{INTERFACE} = $owx->{interface};
   
   #-- continue definition of OWX if interface define was ok, but init failed	
   $ret = OWX_Init($hash);  
