@@ -181,7 +181,7 @@ sub OWX_Define ($$) {
     require "$attr{global}{modpath}/FHEM/11_OWX_SER.pm";
     $owx = OWX_SER->new();
   #-- check if we have a COC/CUNO interface attached  
-  }elsif( (defined $defs{dev} && (defined( $defs{$dev}->{VERSION} ) ? $defs{$dev}->{VERSION} : "") =~ m/CSM|CUNO/ )){
+  }elsif( (defined $defs{$dev} && (defined( $defs{$dev}->{VERSION} ) ? $defs{$dev}->{VERSION} : "") =~ m/CSM|CUNO/ )){
     require "$attr{global}{modpath}/FHEM/11_OWX_CCC.pm";
     $owx = OWX_CCC->new();
   #-- check if we are connecting to Arduino (via FRM):
