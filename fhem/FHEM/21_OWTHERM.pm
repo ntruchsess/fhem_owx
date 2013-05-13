@@ -130,6 +130,7 @@ sub OWTHERM_Initialize ($) {
                      "tempOffset tempUnit:C,Celsius,F,Fahrenheit,K,Kelvin ".
                      "tempConv:onkick,onread tempLow tempHigh ".
                      $readingFnAttributes;                
+  $hash->{AfterExecuteFn} = "OWTHERM_AfterExecute";
   }
   
 ########################################################################################
@@ -531,7 +532,7 @@ sub OWTHERM_GetValues($@) {
     #-- max 3 tries
     for(my $try=0; $try<3; $try++){
       $ret = OWXTHERM_GetValues($hash);
-      last
+      return
         if( !defined($ret) );
     } 
   }elsif( $interface eq "OWServer" ){
@@ -796,9 +797,6 @@ sub OWXTHERM_GetValues($) {
 
   my ($hash) = @_;
   
-  my ($i,$j,$k,@data,$ow_thn,$ow_tln);
-  my $change = 0;
-  
   #-- For default, perform the conversion now
   my $con=1;
   
@@ -815,21 +813,28 @@ sub OWXTHERM_GetValues($) {
 
   #-- if the conversion has not been called before 
   if( $con==1 ){
-    OWX_Reset($master);
     #-- issue the match ROM command \x55 and the start conversion command
-    if( OWX_Complex($master,$owx_dev,"\x44",0) eq 0 ){
-      return "$owx_dev not accessible";
-    } 
     #-- conversion needs some 950 ms - but we may also do it in shorter time !
-    select(undef,undef,undef,1.0);
+    OWX_Execute($master,1,$owx_dev,"\x44",0,1000);
   }
 
   #-- NOW ask the specific device 
-  OWX_Reset($master);
   #-- issue the match ROM command \x55 and the read scratchpad command \xBE
   #-- reading 9 + 1 + 8 data bytes and 1 CRC byte = 19 bytes
-  my $res=OWX_Complex($master,$owx_dev,"\xBE",9);
-  #Log 1,"OWXTHERM: data length from reading device is ".length($res)." bytes";
+  OWX_Execute($master,1,$owx_dev,"\xBE",9,undef);
+
+  return undef;
+}
+
+sub OWTHERM_AfterExecute($$$$$$) {
+  my ($hash, $reset, $owx_dev, $data, $numread, $res) = @_;
+  
+  return unless ((defined $data) and ($data eq "\xBE"));
+  
+  my ($i,$j,$k,@data,$ow_thn,$ow_tln);
+  my $change = 0;
+
+      #Log 1,"OWXTHERM: data length from reading device is ".length($res)." bytes";
   #-- process results
   if( $res eq 0 ){
     return "$owx_dev not accessible in 2nd step"; 
@@ -896,8 +901,8 @@ sub OWXTHERM_GetValues($) {
   #-- process alarm settings
   $owg_tl = $ow_tln;
   $owg_th = $ow_thn;
-  
-  return undef;
+
+  OWTHERM_FormatValues($hash);
 }
 
 #######################################################################################
@@ -937,8 +942,6 @@ sub OWXTHERM_SetValues($@) {
   my $tlp = $owg_tl < 0 ? 128 - $owg_tl : $owg_tl; 
   my $thp = $owg_th < 0 ? 128 - $owg_th : $owg_th; 
 
-  OWX_Reset($master);
-  
   #-- issue the match ROM command \x55 and the write scratchpad command \x4E,
   #   followed by the write EEPROM command \x48
   #
@@ -948,11 +951,7 @@ sub OWXTHERM_SetValues($@) {
   #   3. \x48 sent by WriteBytePower after match ROM => command ok, no effect on EEPROM
   
   my $select=sprintf("\x4E%c%c\x48",$thp,$tlp); 
-  my $res=OWX_Complex($master,$owx_dev,$select,3);
-
-  if( $res eq 0 ){
-    return "OWXTHERM: Device $owx_dev not accessible"; 
-  } 
+  OWX_Execute($master,1,$owx_dev,$select,3,undef);
   
   return undef;
 }
