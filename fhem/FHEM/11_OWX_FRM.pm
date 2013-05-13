@@ -103,7 +103,7 @@ sub FRM_OWX_observer
 			$self->{replies}->{$owx_device} = $owx_data;
 			my $request = $self->{requests}->{$owx_device};
 			my $data = pack "C*",@{$request->{'write'}};
-			main::OWX_AfterExecute( $self->{hash}, $request->{'reset'}, $owx_device, $data, $request->{'read'}, $owx_data );
+			main::OWX_AfterExecute( $self->{hash},1,$request->{'reset'}, $owx_device, $data, $request->{'read'}, $owx_data );
 			last;			
 		};
 		($command eq "SEARCH_REPLY" or $command eq "SEARCH_ALARMS_REPLY") and do {

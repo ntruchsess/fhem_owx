@@ -5,7 +5,8 @@ use constant {
 	SEARCH  => 1,
 	ALARMS  => 2,
 	EXECUTE => 3,
-	EXIT    => 4
+	EXIT    => 4,
+	LOG     => 5
 };
 use threads;
 use Thread::Queue;
@@ -73,29 +74,32 @@ sub poll($) {
 
 		my $command = $item->{command};
 		
-		if ($item->{success}) {
-			# Work on $item
-			RESPONSE_HANDLER: {
-				
-				$command eq SEARCH and do {
-					my @devices = split(/;/,$item->{devices});
-					main::OWX_AfterSearch($hash,\@devices);
-					last;
-				};
-				
-				$command eq ALARMS and do {
-					my @devices = split(/;/,$item->{devices});
-					main::OWX_AfterAlarms($hash,\@devices);
-					last;
-				};
-				
-				$command eq EXECUTE and do {
-					main::OWX_AfterExecute($hash,$item->{reset},$item->{address},$item->{writedata},$item->{numread},$item->{readdata});
-					last;
-				};
+		# Work on $item
+		RESPONSE_HANDLER: {
+			
+			$command eq SEARCH and do {
+				return unless $item->{success};
+				my @devices = split(/;/,$item->{devices});
+				main::OWX_AfterSearch($hash,\@devices);
+				last;
 			};
-		} else {
-			main::OWX_Disconnected($hash);
+			
+			$command eq ALARMS and do {
+				return unless $item->{success};
+				my @devices = split(/;/,$item->{devices});
+				main::OWX_AfterAlarms($hash,\@devices);
+				last;
+			};
+				
+			$command eq EXECUTE and do {
+				main::OWX_AfterExecute($hash,$item->{success},$item->{reset},$item->{address},$item->{writedata},$item->{numread},$item->{readdata});
+				last;
+			};
+			
+			$command eq LOG and do {
+				main::Log($item->{level},$item->{message});
+				last;
+			};
 		};
 	};
 };
@@ -106,7 +110,8 @@ use constant {
 	SEARCH  => 1,
 	ALARMS  => 2,
 	EXECUTE => 3,
-	EXIT    => 4
+	EXIT    => 4,
+	LOG     => 5
 };
 
 sub new($$$) {
@@ -124,6 +129,7 @@ sub run() {
 	my $requests = $self->{requests};
 	my $responses = $self->{responses};
 	my $owx = $self->{owx};
+	$owx->{logger} = $self;
 	while ( my $item = $requests->dequeue() ) {
 		REQUEST_HANDLER: {
 			my $command = $item->{command};
@@ -181,5 +187,15 @@ sub run() {
 		};
 	};
 };
-	
+
+sub log($$) {
+	my ($self,$level,$msg) = @_;
+	my $responses = $self->{responses};
+	$responses->enqueue({
+		command => LOG,
+		level   => $level,
+		message => $msg
+	});
+};
+
 1;

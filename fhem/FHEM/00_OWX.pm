@@ -954,10 +954,10 @@ sub OWX_Execute($$$$$$) {
 	};
 };
 
-sub OWX_AfterExecute($$$$$$) {
-	my ( $hash, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
+sub OWX_AfterExecute($$$$$$$) {
+	my ( $hash, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
 
-	main::Log(1,"AfterExecute: $reset, $owx_dev, $data, $numread, $readdata");
+	main::Log(1,"AfterExecute: $success, $reset, $owx_dev, $data, $numread, $readdata");
 	
 	foreach my $d ( sort keys %main::defs ) {
 		if (   defined( $main::defs{$d} )
@@ -967,7 +967,7 @@ sub OWX_AfterExecute($$$$$$) {
 			&& $main::defs{$d}{ROM_ID} eq $owx_dev ) {
 			main::Log(1,"AfterExecute: match $owx_dev");
 			if ($main::defs{$d}{AfterExecuteFn}) {
-				my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $reset, $owx_dev, $data, $numread, $readdata);
+				my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $success, $reset, $owx_dev, $data, $numread, $readdata);
 			} else {
 				$hash->{replies}{$owx_dev}{$data} = $readdata;
 			}
