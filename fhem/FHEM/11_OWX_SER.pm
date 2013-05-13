@@ -49,7 +49,9 @@ sub new($) {
 		LastFamilyDiscrepancy => 0,
 		LastDeviceFlag => 0,
 		#-- module version
-		version => 4.0
+		version => 4.0,
+		alarmdevs => [],
+		devs => []
 	}, $class;
 }
 
@@ -103,7 +105,11 @@ sub Alarms () {
   while( $self->{LastDeviceFlag}==0 && $res != 0){
     $res = $res & $self->Next("alarm");
   }
+<<<<<<< HEAD
   main::Log(1, " Alarms = ".join(' ',@{$self->{alarmdevs}}));
+=======
+  $self->{logger}->log(1, " Alarms = ".join(' ',@{$self->{alarmdevs}}));
+>>>>>>> async_local
   return $self->{alarmdevs};
 } 
 
@@ -169,7 +175,7 @@ sub Complex ($$$) {
       $k=ord(substr($select,$i,1))%16;
       $res2.=sprintf "0x%1x%1x ",$j,$k;
     }
-    main::Log(3, $res2);
+    $self->{logger}->log(3, $res2);
   }
   if( $interface eq "DS2480" ){
     $res = $self->Block_2480($select);
@@ -187,7 +193,7 @@ sub Complex ($$$) {
       $k=ord(substr($res,$i,1))%16;
       $res2.=sprintf "0x%1x%1x ",$j,$k;
     }
-    main::Log(3, $res2);
+    $self->{logger}->log(3, $res2);
   }
   
   return $res
@@ -211,15 +217,22 @@ sub Discover () {
   while( $self->{LastDeviceFlag}==0 && $res!=0 ){
     $res = $res & $self->Next("discover"); 
   }
-  return $self->{DEVS};
+  return $self->{devs};
 }
 
 ########################################################################################
 # 
 # Init - Initialize the 1-wire device
 #
+<<<<<<< HEAD
 # Return 1 or Errormessage if not OK
 # 0 or undef if OK
+=======
+# Parameter hash = hash of bus master
+#
+# Return 1 or Errormessage : not OK
+#        0 or undef : OK
+>>>>>>> async_local
 #
 ########################################################################################
 
@@ -310,7 +323,8 @@ sub Init($) {
 sub Disconnect($) {
 	my ($self,$hash) = @_;
 	main::DevIo_Disconnected($hash);
-	delete $self->{hwdevice} if (defined $self->{hwdevice});	
+	delete $self->{hwdevice} if (defined $self->{hwdevice});
+	$self->{interface} = "serial";
 }	
 
 ########################################################################################
@@ -455,7 +469,7 @@ sub Search ($) {
   #-- 1-Wire reset
   if ($self->Reset()==0){
     #-- reset the search
-    main::Log(1, "OWX_SER::Search reset failed");
+    $self->{logger}->log(1, "OWX_SER::Search reset failed");
     $self->{LastDiscrepancy} = 0;
     $self->{LastDeviceFlag} = 0;
     $self->{LastFamilyDiscrepancy} = 0;
@@ -468,13 +482,13 @@ sub Search ($) {
   }elsif( $interface eq "DS9097" ){
     $self->Search_9097($mode);
   }else{
-    main::Log(1,"OWX_SER::Search called with unknown interface ".$interface);
+    $self->{logger}->log(1,"OWX_SER::Search called with unknown interface ".$interface);
     return 0;
   }
   #--check if we really found a device
   if( main::OWX_CRC($self->{ROM_ID})!= 0){
   #-- reset the search
-    main::Log(1, "OWX_SER::Search CRC failed ");
+    $self->{logger}->log(1, "OWX_SER::Search CRC failed ");
     $self->{LastDiscrepancy} = 0;
     $self->{LastDeviceFlag} = 0;
     $self->{LastFamilyDiscrepancy} = 0;
@@ -495,7 +509,7 @@ sub Search ($) {
     
   #-- mode was to verify presence of a device
   if ($mode eq "verify") {
-    main::Log(5, "OWX_SER::Search: device verified $dev");
+    $self->{logger}->log(5, "OWX_SER::Search: device verified $dev");
     return 1;
   #-- mode was to discover devices
   } elsif( $mode eq "discover" ){
@@ -509,7 +523,7 @@ sub Search ($) {
       }
     }
     push(@owx_fams,substr($dev,0,2)) if( !$famfnd );
-    foreach (@{$self->{DEVS}}){
+    foreach (@{$self->{devs}}){
       if( $dev eq $_ ){        
         #-- if present, set the last device found flag
         $self->{LastDeviceFlag}=1;
@@ -518,8 +532,8 @@ sub Search ($) {
     }
     if( $self->{LastDeviceFlag}!=1 ){
       #-- push to list
-      push(@{$self->{DEVS}},$dev);
-      main::Log(5, "OWX_SER::Search: new device found $dev");
+      push(@{$self->{devs}},$dev);
+      $self->{logger}->log(5, "OWX_SER::Search: new device found $dev");
     }  
     return 1;
     
@@ -535,7 +549,11 @@ sub Search ($) {
     if( $self->{LastDeviceFlag}!=1 ){
     #--push to list
       push(@{$self->{alarmdevs}},$dev);
+<<<<<<< HEAD
       main::Log(5, "OWX_SER::Search: new alarm device found $dev");
+=======
+      $self->{logger}->log(5, "OWX_SER::Search: new alarm device found $dev");
+>>>>>>> async_local
     }  
     return 1;
   }
@@ -610,10 +628,10 @@ sub Level_2480 ($) {
     my $r1  = ord(substr($res,0,1)) & 236;
     my $r2  = ord(substr($res,1,1)) & 236;
     if( ($r1 eq 236) && ($r2 eq 236) ){
-      main::Log(5, "OWX_SER: Level change to normal OK");
+      $self->{logger}->log(5, "OWX_SER: Level change to normal OK");
       return 1;
     } else {
-      main::Log(3, "OWX_SER: Failed to change to normal level");
+      $self->{logger}->log(3, "OWX_SER: Failed to change to normal level");
       return 0;
     }
   #-- start pulse  
@@ -625,10 +643,10 @@ sub Level_2480 ($) {
     return undef if (not defined $res);
     #-- process result
     if( $res eq "\x3E" ){
-      main::Log(5, "OWX_SER: Level change OK");
+      $self->{logger}->log(5, "OWX_SER: Level change OK");
       return 1;
     } else {
-      main::Log(3, "OWX_SER: Failed to change level");
+      $self->{logger}->log(3, "OWX_SER: Failed to change level");
       return 0;
     }
   }
@@ -666,15 +684,15 @@ sub Query_2480 ($$) {
       $k=ord(substr($cmd,$i,1))%16;
   	$res.=sprintf "0x%1x%1x ",$j,$k;
     }
-    main::Log(3, $res);
+    $self->{logger}->log(3, $res);
   }
   
   my $count_out = $hwdevice->write($cmd);
   
   if( !($count_out)){
-    main::Log(3,"OWX_SER::Query_2480: No return value after writing") if( $main::owx_debug > 0);
+    $self->{logger}->log(3,"OWX_SER::Query_2480: No return value after writing") if( $main::owx_debug > 0);
   } else {
-    main::Log(3, "OWX_SER::Query_2480: Write incomplete $count_out ne ".(length($cmd))."") if ( ($count_out != length($cmd)) & ($main::owx_debug > 0));
+    $self->{logger}->log(3, "OWX_SER::Query_2480: Write incomplete $count_out ne ".(length($cmd))."") if ( ($count_out != length($cmd)) & ($main::owx_debug > 0));
   }
   #-- sleeping for some time
   select(undef,undef,undef,0.04);
@@ -683,12 +701,12 @@ sub Query_2480 ($$) {
   $n=0;                                                
   for($l=0;$l<$retlen;$l+=$m) {                            
     my ($count_in, $string_part) = $hwdevice->read(48);  
-    return undef if (not defined $string_part);
+    return undef if (not defined $count_in or not defined $string_part);
     $string_in .= $string_part;                            
     $m = $count_in;		
   	$n++;
  	if( $main::owx_debug > 2){
- 	  main::Log(3, "OWX_SER::Query_2480: Loop no. $n");
+ 	  $self->{logger}->log(3, "OWX_SER::Query_2480: Loop no. $n");
  	  }
  	if ($n > 100) {                                       
 	  $m = $retlen;                                         
@@ -701,7 +719,7 @@ sub Query_2480 ($$) {
         $k=ord(substr($string_part,$i,1))%16;
         $res.=sprintf "0x%1x%1x ",$j,$k;
 	  }
-      main::Log(3, $res)
+      $self->{logger}->log(3, $res)
         if( $count_in > 0);
 	}
   }
@@ -749,7 +767,7 @@ sub Reset_2480 () {
   #-- process result
   $r1  = ord(substr($res,0,1)) & 192;
   if( $r1 != 192){
-    main::Log(3, "OWX_SER::Reset_2480 failure on bus $name");
+    $self->{logger}->log(3, "OWX_SER::Reset_2480 failure on bus $name");
     return 0;
   }
   $self->{ALARMED} = "no";
@@ -760,7 +778,7 @@ sub Reset_2480 () {
     #Log(3, "OWX_SER: No presence detected";
     return 1;
   }elsif( $r2 ==2 ){
-    main::Log(1, "OWX_SER::Reset_2480 Alarm presence detected on bus $name");
+    $self->{logger}->log(1, "OWX_SER::Reset_2480 Alarm presence detected on bus $name");
     $self->{ALARMED} = "yes";
   }
   return 1;
@@ -831,7 +849,7 @@ sub Search_2480 ($) {
      
   #-- interpret the return data
   if( length($response)!=16 ) {
-    main::Log(3, "OWX_SER::Search_2480 2nd return has wrong parameter with length = ".length($response)."");
+    $self->{logger}->log(3, "OWX_SER::Search_2480 2nd return has wrong parameter with length = ".length($response)."");
     return 0;
   }
   #-- Response search data parsing (Fig. 11 of Maxim AN192)
@@ -908,10 +926,10 @@ sub WriteBytePower_2480 ($) {
   my $res = $self->Query($cmd);
   #-- process result
   if( $res eq $ret ){
-    main::Log(5, "OWX_SER::WriteBytePower OK");
+    $self->{logger}->log(5, "OWX_SER::WriteBytePower OK");
     return 1;
   } else {
-    main::Log(3, "OWX_SER::WriteBytePower failure");
+    $self->{logger}->log(3, "OWX_SER::WriteBytePower failure");
     return 0;
   }
 }
@@ -972,12 +990,12 @@ sub Query_9097 ($) {
       $k=ord(substr($cmd,$i,1))%16;
       $res.=sprintf "0x%1x%1x ",$j,$k;
     }
-    main::Log(3, $res);
+    $self->{logger}->log(3, $res);
   } 
 	
   my $count_out = $hwdevice->write($cmd);
 
-  main::Log(1, "OWX_SER::Query_9097 Write incomplete $count_out ne ".(length($cmd))."") if ( $count_out != length($cmd) );
+  $self->{logger}->log(1, "OWX_SER::Query_9097 Write incomplete $count_out ne ".(length($cmd))."") if ( $count_out != length($cmd) );
   #-- sleeping for some time
   select(undef,undef,undef,0.01);
  
@@ -992,7 +1010,7 @@ sub Query_9097 ($) {
       $k=ord(substr($string_in,$i,1))%16;
       $res.=sprintf "0x%1x%1x ",$j,$k;
     }
-    main::Log(3, $res);
+    $self->{logger}->log(3, $res);
   }
 	
   #-- sleeping for some time
