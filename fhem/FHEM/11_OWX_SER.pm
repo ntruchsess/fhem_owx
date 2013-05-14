@@ -105,11 +105,7 @@ sub Alarms () {
   while( $self->{LastDeviceFlag}==0 && $res != 0){
     $res = $res & $self->Next("alarm");
   }
-<<<<<<< HEAD
-  main::Log(1, " Alarms = ".join(' ',@{$self->{alarmdevs}}));
-=======
   $self->{logger}->log(1, " Alarms = ".join(' ',@{$self->{alarmdevs}}));
->>>>>>> async_local
   return $self->{alarmdevs};
 } 
 
@@ -224,15 +220,10 @@ sub Discover () {
 # 
 # Init - Initialize the 1-wire device
 #
-<<<<<<< HEAD
-# Return 1 or Errormessage if not OK
-# 0 or undef if OK
-=======
 # Parameter hash = hash of bus master
 #
 # Return 1 or Errormessage : not OK
 #        0 or undef : OK
->>>>>>> async_local
 #
 ########################################################################################
 
@@ -549,11 +540,7 @@ sub Search ($) {
     if( $self->{LastDeviceFlag}!=1 ){
     #--push to list
       push(@{$self->{alarmdevs}},$dev);
-<<<<<<< HEAD
-      main::Log(5, "OWX_SER::Search: new alarm device found $dev");
-=======
       $self->{logger}->log(5, "OWX_SER::Search: new alarm device found $dev");
->>>>>>> async_local
     }  
     return 1;
   }
