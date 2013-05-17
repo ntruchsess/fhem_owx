@@ -952,7 +952,7 @@ sub OWX_Verify ($$) {
 
 sub OWX_Execute($$$$$$$) {
 	my ( $hash, $context, $reset, $owx_dev, $data, $numread, $delay ) = @_;
-	if (my $executor = $hash->{executor}) {
+	if (my $executor = $hash->{ASYNC}) {
 		return $executor->execute( $context, $reset, $owx_dev, $data, $numread, $delay );
 	} else {
 		return 0;
@@ -981,8 +981,7 @@ sub OWX_AfterExecute($$$$$$$$) {
 				&& defined( $main::defs{$d}{IODev} ) 
 				&& $main::defs{$d}{IODev} == $hash 
 				&& $main::defs{$d}{ROM_ID} eq $owx_dev ) {
-				main::Log(1,"AfterExecute: match $owx_dev");
-				if ($main::defs{$d}{AfterExecuteFn}) {
+				if ($main::modules{$main::defs{$d}{TYPE}}{AfterExecuteFn}) {
 					my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $context, $success, $reset, $owx_dev, $data, $numread, $readdata);
 				} else {
 					$hash->{replies}{$owx_dev}{$context} = $readdata;
