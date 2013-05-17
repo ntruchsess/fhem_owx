@@ -314,7 +314,7 @@ sub Init($) {
 sub Disconnect($) {
 	my ($self,$hash) = @_;
 	main::DevIo_Disconnected($hash);
-	delete $self->{hwdevice} if (defined $self->{hwdevice});
+	delete $self->{hwdevice};
 	$self->{interface} = "serial";
 }	
 

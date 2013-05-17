@@ -42,11 +42,12 @@ sub alarms() {
 }
 
 sub execute($$$$$$) {
-	my ( $self, $reset, $owx_dev, $data, $numread, $delay ) = @_;
+	my ( $self, $context, $reset, $owx_dev, $data, $numread, $delay ) = @_;
 	main::Log (1,"Executor->execute");	
 	$self->{requests}->enqueue(
 		{
 			command   => EXECUTE,
+			context   => $context,
 			reset     => $reset,
 			address   => $owx_dev,
 			writedata => $data,
@@ -92,7 +93,7 @@ sub poll($) {
 			};
 				
 			$command eq EXECUTE and do {
-				main::OWX_AfterExecute($hash,$item->{success},$item->{reset},$item->{address},$item->{writedata},$item->{numread},$item->{readdata});
+				main::OWX_AfterExecute($hash,$item->{context},$item->{success},$item->{reset},$item->{address},$item->{writedata},$item->{numread},$item->{readdata});
 				last;
 			};
 			
@@ -160,19 +161,21 @@ sub run() {
 	
 			$command eq EXECUTE and do {
 				if (defined $item->{reset}) {
-					$owx->Reset();
+					if(!$owx->Reset()) {
+						$item->{success}=0;
+						$responses->enqueue($item);
+						last;
+					};
 				};
 				my $res = $owx->Complex($item->{address},$item->{writedata},$item->{numread});
 				if (defined $res) {
-					if (defined $item->{address}) {
-						$item->{success} = 1;
-						my $writelen = split (//,$item->{writedata});
-						my @result = split (//, $res);
-						$item->{readdata} = 9+$writelen < @result ? substr($res,9+$writelen) : "";
-						$responses->enqueue($item);
-					}
+					my $writelen = defined $item->{writedata} ? split (//,$item->{writedata}) : 0;
+					my @result = split (//, $res);
+					$item->{readdata} = 9+$writelen < @result ? substr($res,9+$writelen) : "";
+					$item->{success} = 1;
+					$responses->enqueue($item);
 					if ($item->{delay}) {
-						select (undef,undef,undef,$item->{delay}/1000);
+						select (undef,undef,undef,$item->{delay}/1000); #TODO implement device (address) specific wait
 					}
 				} else {
 					$item->{success} = 0;

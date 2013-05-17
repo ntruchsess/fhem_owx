@@ -141,6 +141,7 @@ sub OWX_Initialize ($) {
   $hash->{UndefFn} = "OWX_Undef";
   $hash->{GetFn}   = "OWX_Get";
   $hash->{SetFn}   = "OWX_Set";
+  $hash->{ReadFn}  = "OWX_Poll";
   $hash->{ReadyFn} = "OWX_Ready";
   $hash->{InitFn}  = "OWX_Init";
   $hash->{AttrList}= "loglevel:0,1,2,3,4,5,6 dokick:0,1 IODev";
@@ -175,15 +176,15 @@ sub OWX_Define ($$) {
   #-- First step - different methods
   #-- check if we have a serial device attached
   if ( $dev =~ m|$SER_regexp|i){  
-    require "$attr{global}{modpath}/FHEM/11_OWX_SER.pm";
+    require "$main::attr{global}{modpath}/FHEM/11_OWX_SER.pm";
     $owx = OWX_SER->new();
   #-- check if we have a COC/CUNO interface attached  
-  }elsif( (defined $defs{$dev} && (defined( $defs{$dev}->{VERSION} ) ? $defs{$dev}->{VERSION} : "") =~ m/CSM|CUNO/ )){
-    require "$attr{global}{modpath}/FHEM/11_OWX_CCC.pm";
+  }elsif( (defined $main::defs{$dev} && (defined( $main::defs{$dev}->{VERSION} ) ? $main::defs{$dev}->{VERSION} : "") =~ m/CSM|CUNO/ )){
+    require "$main::attr{global}{modpath}/FHEM/11_OWX_CCC.pm";
     $owx = OWX_CCC->new();
   #-- check if we are connecting to Arduino (via FRM):
   } elsif ($dev =~ /^\d{1,2}$/) {
-  	require "$attr{global}{modpath}/FHEM/11_OWX_FRM.pm";
+  	require "$main::attr{global}{modpath}/FHEM/11_OWX_FRM.pm";
     $owx = OWX_FRM->new();
   } else {
     return "OWX: Define failed, unable to identify interface type $dev"
@@ -203,7 +204,14 @@ sub OWX_Define ($$) {
 }
 
 sub OWX_Ready ($) {
-	OWX_Init(@_);
+	OWX_Init(@_);	
+};
+
+sub OWX_Poll ($) {
+	my $hash = shift;
+	if (defined $hash->{ASYNC}) {
+		$hash->{ASYNC}->poll($hash);
+	};
 };
 
 sub OWX_Disconnected($) {
@@ -312,8 +320,8 @@ sub OWX_Complex ($$$$) {
   my $async = $hash->{ASYNC};
 
   if (defined $async) {
-  	delete $hash->{replies}{$owx_dev}{$data};
-	$async->execute( 0, $owx_dev, $data, $numread, 0 );
+  	delete $hash->{replies}{$owx_dev}{$data}; # use $data as execute 'context'
+	$async->execute($data, 0, $owx_dev, $data, $numread, 0 );
 	my $result = "000000000".$data;
 	if ($numread > 0) {
 		my $times = AttrVal($hash,"timeout",1000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
@@ -817,7 +825,7 @@ sub OWX_Reset ($) {
 	my $async = $hash->{ASYNC};
   
 	if (defined $async) {
-		return $async->execute(1, undef, "", 0, undef );
+		return $async->execute("OWX_Reset",1, undef, "", 0, undef );
 	} else {  	
 		#-- interface error
 		my $owx_interface = $hash->{INTERFACE};
@@ -934,7 +942,9 @@ sub OWX_Verify ($$) {
 # OWX_Execute - # similar to OWX_Complex, but asynchronous
 # executes a sequence of 'reset','skip/match ROM','write','read','delay' on the bus
 #
-# Parameter hash = hash of bus master, 
+# Parameter hash = hash of bus master,
+#        context = anything that can be sent as a hash-member through a thread-safe queue 
+#                  see http://perldoc.perl.org/Thread/Queue.html#DESCRIPTION
 #          reset = 1/0 if 1 reset the bus first 
 #        owx_dev = 8 Byte ROM ID of device to be tested, if undef do a 'skip ROM' instead
 #           data = bytes to write (string)
@@ -942,35 +952,49 @@ sub OWX_Verify ($$) {
 #          delay = optional delay (in ms) to wait after executing the next command 
 #                  for the same device
 #
-# Returns : nothing, instead OWX_AfterExecute is called back asynchronous if numread is > 0
+# Returns : 1 if OK
+#           0 if not OK
 #
 ########################################################################################
 
 
-sub OWX_Execute($$$$$$) {
-	my ( $hash, $reset, $owx_dev, $data, $numread, $delay ) = @_;
-	if (my $executor = $hash->{executor}) {
-		$executor->execute( $reset, $owx_dev, $data, $numread, $delay );
-	};
+sub OWX_Execute($$$$$$$) {
+	my ( $hash, $context, $reset, $owx_dev, $data, $numread, $delay ) = @_;
+	if (my $executor = $hash->{ASYNC}) {
+		return $executor->execute( $context, $reset, $owx_dev, $data, $numread, $delay );
+	} else {
+		return 0;
+	}
 };
 
-sub OWX_AfterExecute($$$$$$$) {
-	my ( $hash, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
+sub OWX_AfterExecute($$$$$$$$) {
+	my ( $hash, $context, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
 
-	main::Log(1,"AfterExecute: $success, $reset, $owx_dev, $data, $numread, $readdata");
+	my $loglevel = GetLogLevel($hash->{NAME},6);
+	if ($loglevel > 6) {
+		main::Log($loglevel,"AfterExecute:".
+		" context: ".(defined $context ? $context : "undef").
+		", success: ".(defined $success ? $success : "undef").
+		", reset: ".(defined $reset ? $reset : "undef").
+		", owx_dev: ".(defined $owx_dev ? $owx_dev : "undef").
+		", data: ".(defined $data ? $data : "undef").
+		", numread: ".(defined $numread ? $numread : "undef").
+		", readdata: ".(defined $readdata ? $readdata : "undef"));
+	}
 	
-	foreach my $d ( sort keys %main::defs ) {
-		if (   defined( $main::defs{$d} )
-			&& defined( $main::defs{$d}{ROM_ID} )
-			&& defined( $main::defs{$d}{IODev} ) 
-			&& $main::defs{$d}{IODev} == $hash 
-			&& $main::defs{$d}{ROM_ID} eq $owx_dev ) {
-			main::Log(1,"AfterExecute: match $owx_dev");
-			if ($main::defs{$d}{AfterExecuteFn}) {
-				my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $success, $reset, $owx_dev, $data, $numread, $readdata);
-			} else {
-				$hash->{replies}{$owx_dev}{$data} = $readdata;
-			}
+	if (defined $owx_dev) {
+		foreach my $d ( sort keys %main::defs ) {
+			if (   defined( $main::defs{$d} )
+				&& defined( $main::defs{$d}{ROM_ID} )
+				&& defined( $main::defs{$d}{IODev} ) 
+				&& $main::defs{$d}{IODev} == $hash 
+				&& $main::defs{$d}{ROM_ID} eq $owx_dev ) {
+				if ($main::modules{$main::defs{$d}{TYPE}}{AfterExecuteFn}) {
+					my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $context, $success, $reset, $owx_dev, $data, $numread, $readdata);
+				} else {
+					$hash->{replies}{$owx_dev}{$context} = $readdata;
+				}
+			};
 		};
 	};
 };
