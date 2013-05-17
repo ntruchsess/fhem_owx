@@ -815,21 +815,21 @@ sub OWXTHERM_GetValues($) {
   if( $con==1 ){
     #-- issue the match ROM command \x55 and the start conversion command
     #-- conversion needs some 950 ms - but we may also do it in shorter time !
-    OWX_Execute($master,1,$owx_dev,"\x44",0,1000);
+    OWX_Execute($master,"convert",1,$owx_dev,"\x44",0,1000);
   }
 
   #-- NOW ask the specific device 
   #-- issue the match ROM command \x55 and the read scratchpad command \xBE
   #-- reading 9 + 1 + 8 data bytes and 1 CRC byte = 19 bytes
-  OWX_Execute($master,1,$owx_dev,"\xBE",9,undef);
+  OWX_Execute($master,"read",1,$owx_dev,"\xBE",9,undef);
 
   return undef;
 }
 
-sub OWTHERM_AfterExecute($$$$$$) {
-  my ($hash, $reset, $owx_dev, $data, $numread, $res) = @_;
+sub OWTHERM_AfterExecute($$$$$$$) {
+  my ($hash, $context, $reset, $owx_dev, $data, $numread, $res) = @_;
   
-  return unless ((defined $data) and ($data eq "\xBE"));
+  return unless (defined $context and $context eq "read");
   
   my ($i,$j,$k,@data,$ow_thn,$ow_tln);
   my $change = 0;
@@ -951,7 +951,7 @@ sub OWXTHERM_SetValues($@) {
   #   3. \x48 sent by WriteBytePower after match ROM => command ok, no effect on EEPROM
   
   my $select=sprintf("\x4E%c%c\x48",$thp,$tlp); 
-  OWX_Execute($master,1,$owx_dev,$select,3,undef);
+  OWX_Execute($master,"setvalues",1,$owx_dev,$select,3,undef);
   
   return undef;
 }

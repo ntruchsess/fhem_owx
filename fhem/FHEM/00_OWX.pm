@@ -312,8 +312,8 @@ sub OWX_Complex ($$$$) {
   my $async = $hash->{ASYNC};
 
   if (defined $async) {
-  	delete $hash->{replies}{$owx_dev}{$data};
-	$async->execute( 0, $owx_dev, $data, $numread, 0 );
+  	delete $hash->{replies}{$owx_dev}{$data}; # use $data as execute 'context'
+	$async->execute($data, 0, $owx_dev, $data, $numread, 0 );
 	my $result = "000000000".$data;
 	if ($numread > 0) {
 		my $times = AttrVal($hash,"timeout",1000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
@@ -817,7 +817,7 @@ sub OWX_Reset ($) {
 	my $async = $hash->{ASYNC};
   
 	if (defined $async) {
-		return $async->execute(1, undef, "", 0, undef );
+		return $async->execute("OWX_Reset",1, undef, "", 0, undef );
 	} else {  	
 		#-- interface error
 		my $owx_interface = $hash->{INTERFACE};
@@ -934,7 +934,9 @@ sub OWX_Verify ($$) {
 # OWX_Execute - # similar to OWX_Complex, but asynchronous
 # executes a sequence of 'reset','skip/match ROM','write','read','delay' on the bus
 #
-# Parameter hash = hash of bus master, 
+# Parameter hash = hash of bus master,
+#        context = anything that can be sent as a hash-member through a thread-safe queue 
+#                  see http://perldoc.perl.org/Thread/Queue.html#DESCRIPTION
 #          reset = 1/0 if 1 reset the bus first 
 #        owx_dev = 8 Byte ROM ID of device to be tested, if undef do a 'skip ROM' instead
 #           data = bytes to write (string)
@@ -942,35 +944,50 @@ sub OWX_Verify ($$) {
 #          delay = optional delay (in ms) to wait after executing the next command 
 #                  for the same device
 #
-# Returns : nothing, instead OWX_AfterExecute is called back asynchronous if numread is > 0
+# Returns : 1 if OK
+#           0 if not OK
 #
 ########################################################################################
 
 
-sub OWX_Execute($$$$$$) {
-	my ( $hash, $reset, $owx_dev, $data, $numread, $delay ) = @_;
+sub OWX_Execute($$$$$$$) {
+	my ( $hash, $context, $reset, $owx_dev, $data, $numread, $delay ) = @_;
 	if (my $executor = $hash->{executor}) {
-		$executor->execute( $reset, $owx_dev, $data, $numread, $delay );
-	};
+		return $executor->execute( $context, $reset, $owx_dev, $data, $numread, $delay );
+	} else {
+		return 0;
+	}
 };
 
-sub OWX_AfterExecute($$$$$$$) {
-	my ( $hash, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
+sub OWX_AfterExecute($$$$$$$$) {
+	my ( $hash, $context, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
 
-	main::Log(1,"AfterExecute: $success, $reset, $owx_dev, $data, $numread, $readdata");
+	my $loglevel = GetLogLevel($hash->{NAME},6);
+	if ($loglevel > 6) {
+		main::Log($loglevel,"AfterExecute:".
+		" context: ".(defined $context ? $context : "undef").
+		", success: ".(defined $success ? $success : "undef").
+		", reset: ".(defined $reset ? $reset : "undef").
+		", owx_dev: ".(defined $owx_dev ? $owx_dev : "undef").
+		", data: ".(defined $data ? $data : "undef").
+		", numread: ".(defined $numread ? $numread : "undef").
+		", readdata: ".(defined $readdata ? $readdata : "undef"));
+	}
 	
-	foreach my $d ( sort keys %main::defs ) {
-		if (   defined( $main::defs{$d} )
-			&& defined( $main::defs{$d}{ROM_ID} )
-			&& defined( $main::defs{$d}{IODev} ) 
-			&& $main::defs{$d}{IODev} == $hash 
-			&& $main::defs{$d}{ROM_ID} eq $owx_dev ) {
-			main::Log(1,"AfterExecute: match $owx_dev");
-			if ($main::defs{$d}{AfterExecuteFn}) {
-				my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $success, $reset, $owx_dev, $data, $numread, $readdata);
-			} else {
-				$hash->{replies}{$owx_dev}{$data} = $readdata;
-			}
+	if (defined $owx_dev) {
+		foreach my $d ( sort keys %main::defs ) {
+			if (   defined( $main::defs{$d} )
+				&& defined( $main::defs{$d}{ROM_ID} )
+				&& defined( $main::defs{$d}{IODev} ) 
+				&& $main::defs{$d}{IODev} == $hash 
+				&& $main::defs{$d}{ROM_ID} eq $owx_dev ) {
+				main::Log(1,"AfterExecute: match $owx_dev");
+				if ($main::defs{$d}{AfterExecuteFn}) {
+					my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $context, $success, $reset, $owx_dev, $data, $numread, $readdata);
+				} else {
+					$hash->{replies}{$owx_dev}{$context} = $readdata;
+				}
+			};
 		};
 	};
 };
