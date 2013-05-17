@@ -152,7 +152,7 @@ sub OWTHERM_Define ($$) {
   
   #-- default
   $name          = $a[0];
-  $interval      = 300;
+  $interval      = 5;
   $ret           = "";
 
   #-- check syntax
@@ -826,11 +826,10 @@ sub OWXTHERM_GetValues($) {
   return undef;
 }
 
-sub OWTHERM_AfterExecute($$$$$$$) {
-  my ($hash, $context, $reset, $owx_dev, $data, $numread, $res) = @_;
+sub OWTHERM_AfterExecute($$$$$$$$) {
+  my ($hash, $context, $success, $reset, $owx_dev, $data, $numread, $res) = @_;
   
   return unless (defined $context and $context eq "read");
-  
   my ($i,$j,$k,@data,$ow_thn,$ow_tln);
   my $change = 0;
 
@@ -841,25 +840,24 @@ sub OWTHERM_AfterExecute($$$$$$$) {
   }
   
   #-- process results
-  @data=split(//,substr($res,9));
+  @data=split(//,$res);
   return "invalid data length, ".int(@data)." instead of 10 bytes"
-    if (@data != 10); 
+    if (@data != 9); 
   return "invalid data"
-    if (ord($data[8])<=0); 
+    if (ord($data[8])<=0);
   return "invalid CRC"
-    if (OWX_CRC8(substr($res,10,8),$data[9])==0);
-  
+    if (OWX_CRC8(substr($res,0,8),$data[8])==0);
   #-- this must be different for the different device types
   #   family = 10 => DS1820, DS18S20
   if( $hash->{OW_FAMILY} eq "10" ) {    
   
-    my $count_remain = ord($data[7]);
-    my $count_perc   = ord($data[8]);
+    my $count_remain = ord($data[6]);
+    my $count_perc   = ord($data[7]);
     my $delta        = -0.25 + ($count_perc - $count_remain)/$count_perc;
    
-    my $lsb  = ord($data[1]);
+    my $lsb  = ord($data[0]);
     my $msb  = 0;
-    my $sign = ord($data[2]) & 255;
+    my $sign = ord($data[1]) & 255;
       
     #-- test with -25 degrees
     #$lsb   =  12*16+14;
@@ -872,14 +870,14 @@ sub OWTHERM_AfterExecute($$$$$$$) {
       $owg_temp = -128+$owg_temp;
     }
 
-    $ow_thn = ord($data[3]) > 127 ? 128-ord($data[3]) : ord($data[3]);
-    $ow_tln = ord($data[4]) > 127 ? 128-ord($data[4]) : ord($data[4]);
+    $ow_thn = ord($data[2]) > 127 ? 128-ord($data[2]) : ord($data[2]);
+    $ow_tln = ord($data[3]) > 127 ? 128-ord($data[3]) : ord($data[3]);
 
   } elsif ( ($hash->{OW_FAMILY} eq "22") || ($hash->{OW_FAMILY} eq "28") ) {
      
-    my $lsb  = ord($data[1]);
-    my $msb  = ord($data[2]) & 7;
-    my $sign = ord($data[2]) & 248;
+    my $lsb  = ord($data[0]);
+    my $msb  = ord($data[1]) & 7;
+    my $sign = ord($data[1]) & 248;
       
     #-- test with -55 degrees
     #$lsb   = 9*16;
@@ -891,8 +889,8 @@ sub OWTHERM_AfterExecute($$$$$$$) {
     if( $sign !=0 ){
       $owg_temp = -128+$owg_temp;
     }
-    $ow_thn = ord($data[3]) > 127 ? 128-ord($data[3]) : ord($data[3]);
-    $ow_tln = ord($data[4]) > 127 ? 128-ord($data[4]) : ord($data[4]);
+    $ow_thn = ord($data[2]) > 127 ? 128-ord($data[2]) : ord($data[2]);
+    $ow_tln = ord($data[3]) > 127 ? 128-ord($data[3]) : ord($data[3]);
     
   } else {
     return "OWXTHERM: Unknown device family $hash->{OW_FAMILY}\n";
