@@ -141,6 +141,7 @@ sub OWX_Initialize ($) {
   $hash->{UndefFn} = "OWX_Undef";
   $hash->{GetFn}   = "OWX_Get";
   $hash->{SetFn}   = "OWX_Set";
+  $hash->{ReadFn}  = "OWX_Poll";
   $hash->{ReadyFn} = "OWX_Ready";
   $hash->{InitFn}  = "OWX_Init";
   $hash->{AttrList}= "loglevel:0,1,2,3,4,5,6 dokick:0,1 IODev";
@@ -175,15 +176,15 @@ sub OWX_Define ($$) {
   #-- First step - different methods
   #-- check if we have a serial device attached
   if ( $dev =~ m|$SER_regexp|i){  
-    require "$attr{global}{modpath}/FHEM/11_OWX_SER.pm";
+    require "$main::attr{global}{modpath}/FHEM/11_OWX_SER.pm";
     $owx = OWX_SER->new();
   #-- check if we have a COC/CUNO interface attached  
-  }elsif( (defined $defs{$dev} && (defined( $defs{$dev}->{VERSION} ) ? $defs{$dev}->{VERSION} : "") =~ m/CSM|CUNO/ )){
-    require "$attr{global}{modpath}/FHEM/11_OWX_CCC.pm";
+  }elsif( (defined $main::defs{$dev} && (defined( $main::defs{$dev}->{VERSION} ) ? $main::defs{$dev}->{VERSION} : "") =~ m/CSM|CUNO/ )){
+    require "$main::attr{global}{modpath}/FHEM/11_OWX_CCC.pm";
     $owx = OWX_CCC->new();
   #-- check if we are connecting to Arduino (via FRM):
   } elsif ($dev =~ /^\d{1,2}$/) {
-  	require "$attr{global}{modpath}/FHEM/11_OWX_FRM.pm";
+  	require "$main::attr{global}{modpath}/FHEM/11_OWX_FRM.pm";
     $owx = OWX_FRM->new();
   } else {
     return "OWX: Define failed, unable to identify interface type $dev"
@@ -203,7 +204,14 @@ sub OWX_Define ($$) {
 }
 
 sub OWX_Ready ($) {
-	OWX_Init(@_);
+	OWX_Init(@_);	
+};
+
+sub OWX_Poll ($) {
+	my $hash = shift;
+	if (defined $hash->{ASYNC}) {
+		$hash->{ASYNC}->poll($hash);
+	};
 };
 
 sub OWX_Disconnected($) {
