@@ -6,7 +6,7 @@
 #
 # Prof. Dr. Peter A. Henning 
 #
-# $Id: 21_OWTHERM.pm 2013-02 - pahenning $
+# $Id: 21_OWTHERM.pm 3062 2013-04-11 06:17:17Z pahenning $
 #
 # Disclaimer: No code of the former OWTEMP module is contained here
 #
@@ -72,7 +72,7 @@ use strict;
 use warnings;
 sub Log($$);
 
-my $owx_version="3.21";
+my $owx_version="3.23";
 #-- temperature globals - always the raw values from/for the device
 my $owg_temp     = "";
 my $owg_th       = "";
@@ -301,7 +301,7 @@ sub OWTHERM_FormatValues($) {
     $factor = 1.8;
   } else {
     $abbr="?";
-    Log 3, "OWTHERM_FormatValues: unknown unit $unit";
+    Log 3, "OWTHERM_FormatValues: Unknown temperature unit $unit";
   }
   #-- these values are rather complex to obtain, therefore save them in the hash
   $hash->{READINGS}{"temperature"}{UNIT}     = $unit;
@@ -311,10 +311,6 @@ sub OWTHERM_FormatValues($) {
   
   #-- no change in any value if invalid reading
   return if( $owg_temp eq "");
-  
-  #-- check if device needs to be initialized
-  OWTHERM_InitializeDevice($hash)
-    if( $hash->{READINGS}{"state"}{VAL} eq "defined");
   
   #-- correct values for proper offset, factor 
   $vval  = ($owg_temp + $offset)*$factor;
@@ -457,6 +453,10 @@ sub OWTHERM_GetValues($@) {
   my $value   = "";
   my $ret     = "";
   
+  #-- check if device needs to be initialized
+  OWTHERM_InitializeDevice($hash)
+    if( $hash->{READINGS}{"state"}{VAL} eq "defined");
+  
   #-- restart timer for updates
   RemoveInternalTimer($hash);
   InternalTimer(time()+$hash->{INTERVAL}, "OWTHERM_GetValues", $hash, 1);
@@ -510,7 +510,7 @@ sub OWTHERM_InitializeDevice($) {
   my $name   = $hash->{NAME};
   my $interface = $hash->{IODev}->{TYPE};
   my @a = ($name,"",0);
-  my ($unit,$offset,$factor,$abbr,$value);
+  my ($unit,$offset,$factor,$abbr,$value,$ret);
   
   #-- attributes defined ?
   $stateal = defined($attr{$name}{stateAL}) ? $attr{$name}{stateAL} : "&#x25BE;";
@@ -565,11 +565,15 @@ sub OWTHERM_InitializeDevice($) {
     #-- put into device
     #-- OWX interface
     if( $interface eq "OWX" ){
-      OWXTHERM_SetValues($hash,@a);
+      $ret = OWXTHERM_SetValues($hash,@a);
     #-- OWFS interface
     }elsif( $interface eq "OWServer" ){
-      OWFSTHERM_SetValues($hash,@a);
+      $ret = OWFSTHERM_SetValues($hash,@a);
     } 
+    #-- process results
+    if( defined($ret)  ){
+      return "OWTHERM: Could not initialize device $name, reason: ".$ret;
+    }
   }
   if( defined($attr{$name}{"tempHigh"}) ){
     $value = $attr{$name}{"tempHigh"};
@@ -578,14 +582,20 @@ sub OWTHERM_InitializeDevice($) {
     #-- put into device
     #-- OWX interface
     if( $interface eq "OWX" ){
-      OWXTHERM_SetValues($hash,@a);
+      $ret = OWXTHERM_SetValues($hash,@a);
     #-- OWFS interface
     }elsif( $interface eq "OWServer" ){
-      OWFSTHERM_SetValues($hash,@a);
+      $ret = OWFSTHERM_SetValues($hash,@a);
     } 
+    #-- process results
+    if( defined($ret)  ){
+      return "OWTHERM: Could not initialize device $name, reason: ".$ret;
+    }
   }
   #-- Set state to initialized
   readingsSingleUpdate($hash,"state","initialized",1);
+  
+  return undef;
 }
 
 #######################################################################################
@@ -671,8 +681,10 @@ sub OWTHERM_Set($@) {
     } else {
       return "OWTHERM: Set with wrong IODev type $interface";
     }
-    return $ret
-      if(defined($ret));
+    #-- process results
+    if( defined($ret)  ){
+      return "OWTHERM: Could not set device $name, reason: ".$ret;
+    }
   }
   
   #-- process results
