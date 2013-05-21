@@ -115,7 +115,7 @@ my %attrs = (
 );
 
 #-- some globals needed for the 1-Wire module
-$owx_version=4.0;
+$owx_version=4.5;
 #-- Debugging 0,1,2,3
 $owx_debug=0;
 
