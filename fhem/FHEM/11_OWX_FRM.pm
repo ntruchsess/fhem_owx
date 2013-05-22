@@ -163,27 +163,6 @@ sub FRM_OWX_firmata_to_device
 
 ########################################################################################
 #
-# Verify - Verify a particular device on the 1-Wire bus
-#
-# Parameter hash = hash of bus master, dev =  8 Byte ROM ID of device to be tested
-#
-# Return 1 : device found
-#        0 : device not
-#
-########################################################################################
-
-sub Verify($) {
-	my ($self,$dev) = @_;
-	foreach my $found ($self->{devs}) {
-		if ($dev eq $found) {
-			return 1;
-		}
-	}
-	return 0;
-}
-
-########################################################################################
-#
 # asynchronous methods search, alarms and execute
 #
 ########################################################################################

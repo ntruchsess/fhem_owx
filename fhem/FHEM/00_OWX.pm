@@ -226,13 +226,13 @@ sub OWX_Disconnected($) {
 
 ########################################################################################
 #
-# OWX_Alarms - Find devices on the 1-Wire bus, 
-#              which have the alarm flag set
+# OWX_Alarms - Initiate search for devices on the 1-Wire bus which have the alarm flag set
 #
 # Parameter hash = hash of bus master
 #
-# Return: Message or list of alarmed devices
-#
+# Return: 1 if search could be successfully initiated. Message or list of alarmed devices
+#     undef otherwise
+#TODO fix OWX_Alarms return value on failure
 ########################################################################################
 
 sub OWX_Alarms ($) {
@@ -244,17 +244,8 @@ sub OWX_Alarms ($) {
 	my $res;
 
 	if (defined $async) {
-		delete $hash->{alarmed};
-		$async->alarms();
-		my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
-		for (my $i=0;$i<$times;$i++) {
-			if(! defined $hash->{alarmed} ) {
-				select (undef,undef,undef,0.05);
-				$async->poll($hash);
-			} else {
-				return $hash->{alarmed};
-			};
-		};
+		delete $hash->{ALARMDEVS};
+		return $async->alarms();
 	} else {
 		#-- interface error
 		my $owx_interface = $hash->{INTERFACE};
@@ -266,14 +257,75 @@ sub OWX_Alarms ($) {
 	}
 };
 
+#######################################################################################
+#
+# OWX_AwaitAlarmsResponse - Wait for the result of a call to OWX_Alarms 
+#
+# Parameter hash = hash of bus master
+#
+# Return: Reference to Array of alarmed 1-Wire-addresses found on 1-Wire bus.
+#         undef if timeout occours
+#
+########################################################################################
+
+sub OWX_AwaitAlarmsResponse($) {
+	my ($hash) = @_;
+
+	#-- get the interface
+	my $async           = $hash->{ASYNC};
+	if (defined $async) {
+		my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
+		for (my $i=0;$i<$times;$i++) {
+			if(! defined $hash->{ALARMDEVS} ) {
+				select (undef,undef,undef,0.05);
+				$async->poll($hash);
+			} else {
+				return $hash->{ALARMDEVS};
+			};
+		};
+	};
+	return undef;
+}
+
+########################################################################################
+#
+# OWX_AfterAlarms - is called when the search for alarmed devices that was initiated by OWX_Alarms successfully returns
+#
+# stores device-addresses found in $hash->{ALARMDEVS}
+#
+# Attention: this function is not intendet to be called directly! 
+#
+# Parameter hash = hash of bus master
+#       alarmed_devs = Reference to Array of device-address-strings
+#
+# Returns: nothing
+#
+########################################################################################
+
 sub OWX_AfterAlarms($$) {
   my ($hash,$alarmed_devs) = @_;
-  my @owx_alarm_names=();
-  my $name = $hash->{NAME};
   $hash->{ALARMDEVS} = $alarmed_devs;
+};
+
+########################################################################################
+#
+# OWX_DiscoverAlarms - Search for devices on the 1-Wire bus which have the alarm flag set
+#
+# Parameter hash = hash of bus master
+#
+# Return: Message or list of alarmed devices
+#
+########################################################################################
+
+sub OWX_DiscoverAlarms($) {
+  my ($hash) = @_;
+  if (OWX_Alarms($hash)) {
+  	if (my $alarmed_devs = OWX_AwaitAlarmsResponse($hash)) {
+      my @owx_alarm_names=();
+      my $name = $hash->{NAME};
+  	
   if( $alarmed_devs == 0){
-    $hash->{alarmed} = "OWX: No alarmed 1-Wire devices found on bus $name";
-    return;
+    return "OWX: No alarmed 1-Wire devices found on bus $name";
   }
   #-- walk through all the devices to get their proper fhem names
   foreach my $fhem_dev (sort keys %main::defs) {
@@ -295,7 +347,9 @@ sub OWX_AfterAlarms($$) {
     }
   }
   #-- so far, so good - what do we want to do with this ?
-  $hash->{alarmed} = "OWX: ".scalar(@owx_alarm_names)." alarmed 1-Wire devices found on bus $name (".join(",",@owx_alarm_names).")";
+  return "OWX: ".scalar(@owx_alarm_names)." alarmed 1-Wire devices found on bus $name (".join(",",@owx_alarm_names).")";
+  	}
+  }
 };
 
 ########################################################################################
@@ -517,6 +571,27 @@ sub OWX_CRC16 ($$$) {
 
 sub OWX_Discover ($) {
 	my ($hash) = @_;
+	if (OWX_Search($hash)) {
+		if (my $owx_devices = OWX_AwaitSearchResponse($hash)) {
+			return OWX_AutoCreate($hash,$owx_devices);			
+		};
+	} else {
+		return undef;
+	}
+}
+
+#######################################################################################
+#
+# OWX_Search - Initiate Search for devices on the 1-Wire bus 
+#
+# Parameter hash = hash of bus master
+#
+# Return: 1, if initiation of search could be startet, undef if not
+#
+########################################################################################
+
+sub OWX_Search($) {
+	my ($hash) = @_;
   
 	my $res;
 	my $ow_dev;
@@ -526,29 +601,85 @@ sub OWX_Discover ($) {
 
 	#-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
 	if (defined $async) {
-		delete $hash->{discovered};
+		delete $hash->{DEVS};
 		$async->search();
-		my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
-		for (my $i=0;$i<$times;$i++) {
-			if(! defined $hash->{discovered} ) {
-				select (undef,undef,undef,0.05);
-				$async->poll($hash);
-			} else {
-				return $hash->{discovered};
-			};
-		};
+		return 1;		
 	} else {
 		my $owx_interface = $hash->{INTERFACE};
 		if( !defined($owx_interface) ) {
 			return undef;
 		} else {
-			Log 1,"OWX: Discover called with unknown interface $owx_interface";
+			Log 1,"OWX: Search called with unknown interface $owx_interface";
 			return undef;
 		} 
 	}
 }
-  
+
+#######################################################################################
+#
+# OWX_AwaitSearchResponse - Wait for the result of a call to OWX_Search 
+#
+# Parameter hash = hash of bus master
+#
+# Return: Reference to Array of 1-Wire-addresses found on 1-Wire bus.
+#         undef if timeout occours
+#
+########################################################################################
+
+sub OWX_AwaitSearchResponse($) {
+	my ($hash) = @_;
+	#-- get the interface
+	my $async = $hash->{ASYNC};
+
+	#-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
+	if (defined $async) {
+		my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
+		for (my $i=0;$i<$times;$i++) {
+			if(! defined $hash->{DEVS} ) {
+				select (undef,undef,undef,0.05);
+				$async->poll($hash);
+			} else {
+				return $hash->{DEVS};
+			};
+		};
+	};
+	return undef;
+};
+
+########################################################################################
+#
+# OWX_AfterSearch - is called when the search initiated by OWX_Search successfully returns
+#
+# stores device-addresses found in $hash->{DEVS}
+#
+# Attention: this function is not intendet to be called directly! 
+#
+# Parameter hash = hash of bus master
+#       owx_devs = Reference to Array of device-address-strings
+#
+# Returns: nothing
+#
+########################################################################################
+
 sub OWX_AfterSearch($$) {
+  my ($hash,$owx_devs) = @_;
+  if (defined $owx_devs and (ref($owx_devs) eq "ARRAY")) {
+  	$hash->{DEVS} = $owx_devs;
+  }
+}
+
+########################################################################################
+#
+# OWX_Autocreate - autocreate devices if not already present
+#
+# Parameter hash = hash of bus master
+#       owx_devs = Reference to Array of device-address-strings as OWX_AfterSearch stores in $hash->{DEVS}
+#
+# Return: List of devices in table format or undef
+#
+########################################################################################
+
+sub OWX_AutoCreate($$) { 
   my ($hash,$owx_devs) = @_;
   my $name = $hash->{NAME};
   my ($chip,$acstring,$acname,$exname);
@@ -556,7 +687,6 @@ sub OWX_AfterSearch($$) {
   my @owx_names=();
   
   if (defined $owx_devs and (ref($owx_devs) eq "ARRAY")) {
-  	$hash->{DEVS} = $owx_devs;
     #-- Go through all devices found on this bus
     foreach my $owx_dev  (@{$owx_devs}) {
       #-- ignore those which do not have the proper pattern
@@ -673,7 +803,7 @@ sub OWX_AfterSearch($$) {
   #-- Log the discovered devices
   Log 1, "OWX: 1-Wire devices found on bus $name (".join(",",@owx_names).")";
   #-- tabular view as return value
-  $hash->{discovered} = "OWX: 1-Wire devices found on bus $name \n".$ret;
+  return "OWX: 1-Wire devices found on bus $name \n".$ret;
 }   
 
 ########################################################################################
@@ -692,7 +822,7 @@ sub OWX_Get($@) {
   my $owx_dev  = $hash->{ROM_ID};
 
   if( $a[1] eq "alarms") {
-    my $res = OWX_Alarms($hash);
+    my $res = OWX_DiscoverAlarms($hash);
     #-- process result
     return $res
     
@@ -917,24 +1047,19 @@ sub OWX_Undef ($$) {
 ########################################################################################
 
 sub OWX_Verify ($$) {
-  my ($hash,$dev) = @_;
-  my $i;
-  
-  #-- get the interface
-  my $owx           = $hash->{OWX};
-
-  if (defined $owx) {
-  	return $owx->Verify($dev);
-  } else {
-    #-- interface error
-	my $owx_interface = $hash->{INTERFACE};
-    if( !(defined($owx_interface))){
-      return 0;
-    } else {
-      Log 1,"OWX: Verify called with unknown interface $owx_interface";
-      return 0;
-    }
-  }
+	my ($hash,$dev) = @_;
+	my $address = substr($dev,0,15);
+	if (OWX_Search($hash)) {
+		if (my $owx_devices = OWX_AwaitSearchResponse($hash)) {
+			foreach my $found (@{$owx_devices}) {
+				if ($address eq substr($found,0,15)) {
+					return 1;
+				};
+			};
+		};
+	} else {
+		return 0;
+	}
 }
 
 ########################################################################################
