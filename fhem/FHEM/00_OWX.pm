@@ -547,7 +547,7 @@ sub OWX_Search($) {
 
 	#-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
 	if (defined $async) {
-		delete $hash->{discovered};
+		delete $hash->{DEVS};
 		$async->search();
 		return 1;		
 	} else {
@@ -567,7 +567,7 @@ sub OWX_Search($) {
 #
 # Parameter hash = hash of bus master
 #
-# Return: Array of 1-Wire-addresses found on 1-Wire bus.
+# Return: Reference to Array of 1-Wire-addresses found on 1-Wire bus.
 #         undef if timeout occours
 #
 ########################################################################################
@@ -601,7 +601,7 @@ sub OWX_AwaitSearchResponse($) {
 # Attention: this function is not intendet to be called directly! 
 #
 # Parameter hash = hash of bus master
-#       owx_devs = Array of device-address-strings
+#       owx_devs = Reference to Array of device-address-strings
 #
 # Returns: nothing
 #
@@ -619,13 +619,13 @@ sub OWX_AfterSearch($$) {
 # OWX_Autocreate - autocreate devices if not already present
 #
 # Parameter hash = hash of bus master
-#       owx_devs = Array of device-address-strings as OWX_AfterSearch stores in $hash->{DEVS}
+#       owx_devs = Reference to Array of device-address-strings as OWX_AfterSearch stores in $hash->{DEVS}
 #
 # Return: List of devices in table format or undef
 #
 ########################################################################################
 
-sub OWX_AutoCreate($) { 
+sub OWX_AutoCreate($$) { 
   my ($hash,$owx_devs) = @_;
   my $name = $hash->{NAME};
   my ($chip,$acstring,$acname,$exname);
@@ -993,24 +993,19 @@ sub OWX_Undef ($$) {
 ########################################################################################
 
 sub OWX_Verify ($$) {
-  my ($hash,$dev) = @_;
-  my $i;
-  
-  #-- get the interface
-  my $owx           = $hash->{OWX};
-
-  if (defined $owx) {
-  	return $owx->Verify($dev);
-  } else {
-    #-- interface error
-	my $owx_interface = $hash->{INTERFACE};
-    if( !(defined($owx_interface))){
-      return 0;
-    } else {
-      Log 1,"OWX: Verify called with unknown interface $owx_interface";
-      return 0;
-    }
-  }
+	my ($hash,$dev) = @_;
+	my $address = substr($dev,0,15);
+	if (OWX_Search($hash)) {
+		if (my $owx_devices = OWX_AwaitSearchResponse($hash)) {
+			foreach my $found (@{$owx_devices}) {
+				if ($address eq substr($found,0,15)) {
+					return 1;
+				};
+			};
+		};
+	} else {
+		return 0;
+	}
 }
 
 ########################################################################################
