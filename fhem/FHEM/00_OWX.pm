@@ -517,6 +517,27 @@ sub OWX_CRC16 ($$$) {
 
 sub OWX_Discover ($) {
 	my ($hash) = @_;
+	if (OWX_Search($hash)) {
+		if (my $owx_devices = OWX_AwaitSearchResponse($hash)) {
+			return OWX_AutoCreate($hash,$owx_devices);			
+		};
+	} else {
+		return undef;
+	}
+}
+
+#######################################################################################
+#
+# OWX_Search - Initiate Search for devices on the 1-Wire bus 
+#
+# Parameter hash = hash of bus master
+#
+# Return: 1, if initiation of search could be startet, undef if not
+#
+########################################################################################
+
+sub OWX_Search($) {
+	my ($hash) = @_;
   
 	my $res;
 	my $ow_dev;
@@ -528,27 +549,83 @@ sub OWX_Discover ($) {
 	if (defined $async) {
 		delete $hash->{discovered};
 		$async->search();
-		my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
-		for (my $i=0;$i<$times;$i++) {
-			if(! defined $hash->{discovered} ) {
-				select (undef,undef,undef,0.05);
-				$async->poll($hash);
-			} else {
-				return $hash->{discovered};
-			};
-		};
+		return 1;		
 	} else {
 		my $owx_interface = $hash->{INTERFACE};
 		if( !defined($owx_interface) ) {
 			return undef;
 		} else {
-			Log 1,"OWX: Discover called with unknown interface $owx_interface";
+			Log 1,"OWX: Search called with unknown interface $owx_interface";
 			return undef;
 		} 
 	}
 }
-  
+
+#######################################################################################
+#
+# OWX_AwaitSearchResponse - Wait for the result of a call to OWX_Search 
+#
+# Parameter hash = hash of bus master
+#
+# Return: Array of 1-Wire-addresses found on 1-Wire bus.
+#         undef if timeout occours
+#
+########################################################################################
+
+sub OWX_AwaitSearchResponse($) {
+	my ($hash) = @_;
+	#-- get the interface
+	my $async = $hash->{ASYNC};
+
+	#-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
+	if (defined $async) {
+		my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
+		for (my $i=0;$i<$times;$i++) {
+			if(! defined $hash->{DEVS} ) {
+				select (undef,undef,undef,0.05);
+				$async->poll($hash);
+			} else {
+				return $hash->{DEVS};
+			};
+		};
+	};
+	return undef;
+};
+
+########################################################################################
+#
+# OWX_AfterSearch - is called when the search initiated by OWX_Search successfully returns
+#
+# stored device-addresses found in $hash->{DEVS}
+#
+# Attention: this function is not intendet to be called directly! 
+#
+# Parameter hash = hash of bus master
+#       owx_devs = Array of device-address-strings
+#
+# Returns: nothing
+#
+########################################################################################
+
 sub OWX_AfterSearch($$) {
+  my ($hash,$owx_devs) = @_;
+  if (defined $owx_devs and (ref($owx_devs) eq "ARRAY")) {
+  	$hash->{DEVS} = $owx_devs;
+  }
+}
+
+########################################################################################
+#
+# OWX_Autocreate - autocreate devices if not already present
+#
+# Parameter hash = hash of bus master
+#       owx_devs = Array of device-address-strings as OWX_AfterSearch stores in $hash->{DEVS}
+#
+# Return: List of devices in table format or undef
+#
+########################################################################################
+
+sub OWX_AutoCreate($) { 
   my ($hash,$owx_devs) = @_;
   my $name = $hash->{NAME};
   my ($chip,$acstring,$acname,$exname);
@@ -556,7 +633,6 @@ sub OWX_AfterSearch($$) {
   my @owx_names=();
   
   if (defined $owx_devs and (ref($owx_devs) eq "ARRAY")) {
-  	$hash->{DEVS} = $owx_devs;
     #-- Go through all devices found on this bus
     foreach my $owx_dev  (@{$owx_devs}) {
       #-- ignore those which do not have the proper pattern
@@ -673,7 +749,7 @@ sub OWX_AfterSearch($$) {
   #-- Log the discovered devices
   Log 1, "OWX: 1-Wire devices found on bus $name (".join(",",@owx_names).")";
   #-- tabular view as return value
-  $hash->{discovered} = "OWX: 1-Wire devices found on bus $name \n".$ret;
+  return "OWX: 1-Wire devices found on bus $name \n".$ret;
 }   
 
 ########################################################################################
