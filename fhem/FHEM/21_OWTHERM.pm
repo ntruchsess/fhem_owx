@@ -841,7 +841,7 @@ sub OWXTHERM_GetValues($) {
 sub OWTHERM_AfterExecute($$$$$$$$) {
   my ($hash, $context, $success, $reset, $owx_dev, $data, $numread, $res) = @_;
   
-  return unless (defined $context and $context eq "read");
+  return undef unless (defined $context and $context eq "read");
   my ($i,$j,$k,@data,$ow_thn,$ow_tln);
   my $change = 0;
 
@@ -913,6 +913,7 @@ sub OWTHERM_AfterExecute($$$$$$$$) {
   $owg_th = $ow_thn;
 
   OWTHERM_FormatValues($hash);
+  return undef;
 }
 
 #######################################################################################
