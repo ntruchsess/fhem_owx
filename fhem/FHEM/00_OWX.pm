@@ -531,7 +531,7 @@ sub OWX_Discover ($) {
     #-- three pieces of the ROM ID found on the bus
     $owx_rnf = substr($owx_dev,3,12);
     $owx_f   = substr($owx_dev,0,2);
-    $owx_crc = substr($owx_dev,15,3);
+    $owx_crc = substr($owx_dev,16,2);
     $id_owx  = $owx_f.".".$owx_rnf;
       
     $match = 0;
