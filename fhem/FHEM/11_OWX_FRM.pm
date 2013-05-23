@@ -78,7 +78,6 @@ sub Init($)
 	return $ret if (defined $ret);
 	my $firmata = $hash->{IODev}->{FirmataDevice};
 	$firmata->observe_onewire($pin,\&FRM_OWX_observer,$self);
-	$self->{replies} = {};
 	$self->{devs} = [];
 	if ( main::AttrVal($hash->{NAME},"buspower","") eq "parasitic" ) {
 		$firmata->onewire_config($pin,1);
@@ -118,7 +117,6 @@ sub FRM_OWX_observer
 			my $owx_device = $request->{device};
 			my $context = $request->{context};
 			my $data = pack "C*",@{$request->{command}->{'write'}} if (defined $request->{command}->{'write'});
-			$self->{replies}->{$owx_device}->{$context} = $owx_data;
 			main::OWX_AfterExecute( $self->{hash},$context,1,$request->{'reset'}, $owx_device, $data, $request->{'read'}, $owx_data );
 			delete $self->{requests}->{$id};
 			last;			
@@ -217,7 +215,6 @@ sub execute($$$$$$) {
 						command => $ow_command,
 						device  => $owx_dev
 					};
-					delete $self->{replies}->{$owx_dev}->{$context};
 					$self->{id} = (($id+1) & 0xFFFF);
 				};		
 				$firmata->onewire_command_series( $pin, $ow_command );

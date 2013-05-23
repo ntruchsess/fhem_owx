@@ -367,42 +367,21 @@ sub OWX_DiscoverAlarms($) {
 ########################################################################################
 
 sub OWX_Complex ($$$$) {
-  my ($hash,$owx_dev,$data,$numread) =@_;
-  my $name   = $hash->{NAME};
-  
-  #-- get the interface
-  my $async = $hash->{ASYNC};
-
-  if (defined $async) {
-  	delete $hash->{replies}{$owx_dev}{$data}; # use $data as execute 'context'
-	$async->execute($data, 0, $owx_dev, $data, $numread, 0 );
-	my $result = "000000000".$data;
-	if ($numread > 0) {
-		my $times = AttrVal($hash,"timeout",1000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
-		for (my $i=0;$i<$times;$i++) {
-			if(! defined $hash->{replies}{$owx_dev}{$data}) {
-				select (undef,undef,undef,0.05);
-				$async->poll($hash);
-			} else {
-				$result .= $hash->{replies}{$owx_dev}{$data};
-				last;
-			};
+	my ($hash,$owx_dev,$data,$numread) =@_;
+	my $context = "complex".(unpack "C*", $data);
+	
+	if (OWX_Execute($hash, $context, 0, $owx_dev, $data, $numread, 0)) {
+		my $result = "000000000".$data;
+		if ($numread) {
+ 			if (my $readdata = OWX_AwaitExecuteResponse($hash,$context,$owx_dev)) { 
+				$result .= $readdata;
+ 			};
 		};
+		Log 1, "OWX_Complex: $result";
+		return $result;
 	};
-	Log 1, "OWX_Complex: $result";
-	return $result; 	  	
-  } else {
-	#-- interface error
-  	my $owx_interface = $hash->{INTERFACE};
-  	if( !(defined($owx_interface))) {
-      #Log 3,"OWX: Complex called with undefined interface";
-      return 0;
-    } else {
-	  Log 3,"OWX: Complex called with unknown interface $owx_interface on bus $name";
-      return 0;
-    }
-  }
-}
+	return 0;
+};
 
 ########################################################################################
 #
@@ -698,7 +677,7 @@ sub OWX_AutoCreate($$) {
       #-- three pieces of the ROM ID found on the bus
       my $owx_rnf = substr($owx_dev,3,12);
       my $owx_f   = substr($owx_dev,0,2);
-      my $owx_crc = substr($owx_dev,15,3);
+      my $owx_crc = substr($owx_dev,16,2);
       my $id_owx  = $owx_f.".".$owx_rnf;
       
       my $match = 0;
@@ -1086,11 +1065,67 @@ sub OWX_Verify ($$) {
 sub OWX_Execute($$$$$$$) {
 	my ( $hash, $context, $reset, $owx_dev, $data, $numread, $delay ) = @_;
 	if (my $executor = $hash->{ASYNC}) {
+		delete $hash->{replies}{$owx_dev}{$context} if (defined $owx_dev and defined $context);
 		return $executor->execute( $context, $reset, $owx_dev, $data, $numread, $delay );
 	} else {
 		return 0;
 	}
 };
+
+#######################################################################################
+#
+# OWX_AwaitExecuteResponse - Wait for the result of a call to OWX_Execute 
+#
+# Parameter hash = hash of bus master
+#        context = correlates the response with the call to OWX_Execute
+#        owx_dev = 1-Wire-address of device that is to be read
+#
+# Return: Data that has been read from device
+#         undef if timeout occours
+#
+########################################################################################
+
+sub OWX_AwaitExecuteResponse($$$) {
+	my ($hash,$context,$owx_dev) = @_;
+	#-- get the interface
+	my $async = $hash->{ASYNC};
+
+	#-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
+	if (defined $async and defined $owx_dev and defined $context) {
+		my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
+		for (my $i=0;$i<$times;$i++) {
+			if(! defined $hash->{replies}{$owx_dev}{$context}) {
+				select (undef,undef,undef,0.05);
+				$async->poll($hash);
+			} else {
+				return $hash->{replies}{$owx_dev}{$context};
+			};
+		};
+	};
+	return undef;
+};
+
+########################################################################################
+#
+# OWX_AfterExecute - is called when a query initiated by OWX_Execute successfully returns
+#
+# calls 'AfterExecuteFn' on the devices module (if such is defined)
+# stores data read in $hash->{replies}{$owx_dev}{$context} after calling 'AfterExecuteFn'
+#
+# Attention: this function is not intendet to be called directly! 
+#
+# Parameter hash = hash of bus master
+#        context = context parameter of call to OWX_Execute. Allows to correlate request and response
+#        success = indicates whether an error did occur
+#          reset = indicates whether a reset was carried out
+#        owx_dev = 1-wire device-address
+#           data = data written to the 1-wire device before read was executed
+#        numread = number of bytes requested from 1-wire device
+#       readdata = bytes read from 1-wire device
+#
+# Returns: nothing
+#
+########################################################################################
 
 sub OWX_AfterExecute($$$$$$$$) {
 	my ( $hash, $context, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
@@ -1106,7 +1141,7 @@ sub OWX_AfterExecute($$$$$$$$) {
 		", numread: ".(defined $numread ? $numread : "undef").
 		", readdata: ".(defined $readdata ? $readdata : "undef"));
 	}
-	
+
 	if (defined $owx_dev) {
 		foreach my $d ( sort keys %main::defs ) {
 			if (   defined( $main::defs{$d} )
@@ -1116,10 +1151,11 @@ sub OWX_AfterExecute($$$$$$$$) {
 				&& $main::defs{$d}{ROM_ID} eq $owx_dev ) {
 				if ($main::modules{$main::defs{$d}{TYPE}}{AfterExecuteFn}) {
 					my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $context, $success, $reset, $owx_dev, $data, $numread, $readdata);
-				} else {
-					$hash->{replies}{$owx_dev}{$context} = $readdata;
 				}
 			};
+		};
+		if (defined $context) {
+			$hash->{replies}{$owx_dev}{$context} = $readdata;
 		};
 	};
 };
