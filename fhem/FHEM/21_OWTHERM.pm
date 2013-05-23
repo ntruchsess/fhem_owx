@@ -213,7 +213,7 @@ sub OWTHERM_Define ($$) {
   $hash->{OW_ID}      = $id;
   $hash->{OW_FAMILY}  = $fam;
   $hash->{PRESENT}    = 0;
-  $hash->{ROM_ID}     = $fam.".".$id.$crc;
+  $hash->{ROM_ID}     = $fam.".".$id.".".$crc;
   $hash->{INTERVAL}   = $interval;
   $hash->{ERRCOUNT}   = 0;
   
