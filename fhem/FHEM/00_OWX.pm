@@ -1131,7 +1131,7 @@ sub OWX_AfterExecute($$$$$$$$) {
 	my ( $hash, $context, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
 
 	my $loglevel = GetLogLevel($hash->{NAME},6);
-	if ($loglevel > 6) {
+	if ($loglevel < 6) {
 		main::Log($loglevel,"AfterExecute:".
 		" context: ".(defined $context ? $context : "undef").
 		", success: ".(defined $success ? $success : "undef").
@@ -1151,6 +1151,7 @@ sub OWX_AfterExecute($$$$$$$$) {
 				&& $main::defs{$d}{ROM_ID} eq $owx_dev ) {
 				if ($main::modules{$main::defs{$d}{TYPE}}{AfterExecuteFn}) {
 					my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $context, $success, $reset, $owx_dev, $data, $numread, $readdata);
+					main::Log($loglevel < 6 ? $loglevel : 4,"OWX_AfterExecute [".(defined $owx_dev ? $owx_dev : "unknown owx device")."]: $ret") if ($ret);
 				}
 			};
 		};
