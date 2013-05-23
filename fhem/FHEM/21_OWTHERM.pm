@@ -72,7 +72,7 @@ use strict;
 use warnings;
 sub Log($$);
 
-my $owx_version="3.23";
+my $owx_version="3.24";
 #-- temperature globals - always the raw values from/for the device
 my $owg_temp     = "";
 my $owg_th       = "";
