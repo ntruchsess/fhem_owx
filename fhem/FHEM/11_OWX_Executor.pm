@@ -31,19 +31,16 @@ sub new($) {
 
 sub search() {
 	my $self = shift;
-	main::Log (1,"Executor->search");
 	$self->{requests}->enqueue( { command => SEARCH } );
 }
 
 sub alarms() {
 	my $self = shift;
-	main::Log (1,"Executor->alarms");
 	$self->{requests}->enqueue( { command => ALARMS } );
 }
 
 sub execute($$$$$$) {
 	my ( $self, $context, $reset, $owx_dev, $data, $numread, $delay ) = @_;
-	main::Log (1,"Executor->execute");	
 	$self->{requests}->enqueue(
 		{
 			command   => EXECUTE,
@@ -98,7 +95,8 @@ sub poll($) {
 			};
 			
 			$command eq LOG and do {
-				main::Log($item->{level},$item->{message});
+				my $loglevel = main::GetLogLevel($hash->{NAME},6);
+				main::Log($loglevel <6 ? $loglevel : $item->{level},$item->{message});
 				last;
 			};
 		};
