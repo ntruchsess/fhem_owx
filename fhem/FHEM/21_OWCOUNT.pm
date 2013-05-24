@@ -80,7 +80,7 @@ use strict;
 use warnings;
 sub Log($$);
 
-my $owx_version="3.24";
+my $owx_version="4.00";
 #-- fixed raw channel name, flexible channel name
 my @owg_fixed   = ("A","B");
 my @owg_channel = ("A","B");
@@ -135,6 +135,7 @@ sub OWCOUNT_Initialize ($) {
   $hash->{UndefFn} = "OWCOUNT_Undef";
   $hash->{GetFn}   = "OWCOUNT_Get";
   $hash->{SetFn}   = "OWCOUNT_Set";
+  $hash->{AfterExecuteFn} = "OWXCOUNT_AfterExecute";
   
   #-- see header for attributes
   my $attlist = "IODev do_not_notify:0,1 showtime:0,1 model:DS2423 loglevel:0,1,2,3,4,5 LogM LogY ".
@@ -619,6 +620,7 @@ sub OWCOUNT_Get($@) {
     #-- OWX interface
     if( $interface eq "OWX" ){
       $ret = OWXCOUNT_GetPage($hash,$page);
+      $ret = "timeout" unless ($ret or OWXCOUNT_AwaitPage($hash,$page));
     #-- OWFS interface
     }elsif( $interface eq "OWServer" ){
       $ret = OWFSCOUNT_GetPage($hash,$page);
@@ -650,6 +652,7 @@ sub OWCOUNT_Get($@) {
     #-- OWX interface
     if( $interface eq "OWX" ){
       $ret = OWXCOUNT_GetPage($hash,$page);
+      $ret = "timeout" unless ($ret or OWXCOUNT_AwaitPage($hash,$page));
     #-- OWFS interface
     }elsif( $interface eq "OWServer" ){
       $ret = OWFSCOUNT_GetPage($hash,$page);
@@ -665,6 +668,8 @@ sub OWCOUNT_Get($@) {
     if( $interface eq "OWX" ){
       $ret1 = OWXCOUNT_GetPage($hash,14);
       $ret2 = OWXCOUNT_GetPage($hash,15);
+      $ret2 = "timeout" unless ($ret2 or OWXCOUNT_AwaitPage($hash,15));
+      #no need to wait for page 14 as this is allready done in OWXCOUNT_AfterGetPage
     }elsif( $interface eq "OWServer" ){
       $ret1 = OWFSCOUNT_GetPage($hash,14);
       $ret2 = OWFSCOUNT_GetPage($hash,15);
@@ -804,6 +809,9 @@ sub OWCOUNT_GetValues($) {
   if( $interface eq "OWX" ){
     $ret1 = OWXCOUNT_GetPage($hash,14);
     $ret2 = OWXCOUNT_GetPage($hash,15);
+    #here asynchronous request of pages is initiated. 
+    #OWCOUNT_FormatValues is called in OWXCOUNT_AfterGetPage.
+    return undef unless ($ret1 or $ret2);
   }elsif( $interface eq "OWServer" ){
     $ret1 = OWFSCOUNT_GetPage($hash,14);
     $ret2 = OWFSCOUNT_GetPage($hash,15);
@@ -963,8 +971,7 @@ sub OWCOUNT_Set($@) {
     
   #-- process results - we have to reread the device
   $hash->{PRESENT} = 1; 
-  OWCOUNT_GetValues($hash);  
-  OWCOUNT_FormatValues($hash);  
+  OWCOUNT_GetValues($hash); #implies call to OWCOUNT_FormatValues
   Log 4, "OWCOUNT: Set $hash->{NAME} $key $value";
 }
 
@@ -1105,14 +1112,10 @@ sub OWFSCOUNT_SetPage($$$) {
 sub OWXCOUNT_GetPage($$) {
   my ($hash,$page) = @_;
   
-  my ($select, $res, $res2, $res3, @data);
-  
   #-- ID of the device, hash of the busmaster
   my $owx_dev = $hash->{ROM_ID};
   my $master  = $hash->{IODev};
   
-  my ($i,$j,$k);
-
   #=============== wrong value requested ===============================
   if( ($page<0) || ($page>15) ){
     return "wrong memory page requested";
@@ -1122,45 +1125,33 @@ sub OWXCOUNT_GetPage($$) {
   #   \xA5 TA1 TA2 reading 40 data bytes and 2 CRC bytes
   my $ta2 = ($page*32) >> 8;
   my $ta1 = ($page*32) & 255;
-  $select=sprintf("\xA5%c%c",$ta1,$ta2);   
-  #-- reset the bus
-  OWX_Reset($master);
-    #-- reading 9 + 3 + 40 data bytes and 2 CRC bytes = 54 bytes
-  $res=OWX_Complex($master,$owx_dev,$select,42);
-  if( $res eq 0 ){
+  my $select=sprintf("\xA5%c%c",$ta1,$ta2);
+  
+  if (OWX_Execute($master,"page$page",1,$owx_dev,$select,42,0)) {
+  	return undef;
+  } else {   
     return "device $owx_dev not accessible in reading page $page"; 
   }
-  
-  #-- process results
-  if( length($res) < 54 ) {
-    #Log 1, "OWXCOUNT: warning, have received ".length($res)." bytes in first step";
-    #-- read the data in a second step
-    $res.=OWX_Complex($master,"","",0);
-    #-- process results
-    if( length($res) < 54 ) {
-      #Log 1, "OWXCOUNT: warning, have received ".length($res)." bytes in second step";  
-      #-- read the data in a third step
-      $res.=OWX_Complex($master,"","",0);
-    }
-  }  
-  #-- reset the bus
-  OWX_Reset($master);
+}
 
+sub OWXCOUNT_AfterGetPage($$$$$) {
+  my ( $hash, $page, $owx_dev, $command, $res ) = @_;
+	
   #-- process results
-  @data=split(//,substr($res,9));
+  my @data=split(//,$res);
   return "invalid data length, ".int(@data)." instead of 45 bytes in three steps"
-     if( int(@data) < 45);
+     if( int(@data) < 42);
   #return "invalid data"
   #  if (ord($data[17])<=0); 
   return "invalid CRC"
-    if (OWX_CRC16(substr($res,9,43),$data[43],$data[44]) == 0);
+    if (OWX_CRC16($command.substr($res,0,40),$data[40],$data[41]) == 0);
   
-  #-- first 3 command, next 32 are memory
+  #-- first 32 are memory
   #-- memory part, treated as string
-  $owg_str=substr($res,12,32);
+  $owg_str=substr($res,0,32);
   #-- counter part
   if( ($page == 14) || ($page == 15) ){
-    @data=split(//,substr($res,44));
+    @data=split(//,substr($res,32)); #remaining (after 32) are data
     if ( ($data[4] | $data[5] | $data[6] | $data[7]) ne "\x00" ){
       #Log 1, "device $owx_dev returns invalid data ".ord($data[4])." ".ord($data[5])." ".ord($data[6])." ".ord($data[7]);
       return "device $owx_dev returns invalid data";
@@ -1183,10 +1174,29 @@ sub OWXCOUNT_GetPage($$) {
       $owg_str = 0.0 if(!(defined($owg_str)));
       $owg_midnight[1] = $owg_str;
     }
-      
+    if ($page == 15) {
+      #TODO: skip OWCount_FormatValues if this is not being called from OW_GetValues
+      if (OWXCOUNT_AwaitPage($hash,14)) {
+      	OWCOUNT_FormatValues($hash);
+      }
+    }
   }
  
   return undef;
+}
+
+sub OWXCOUNT_AwaitPage($$) {
+	my ($hash,$page) = @_;
+	
+	#-- ID of the device, hash of the busmaster
+	my $owx_dev = $hash->{ROM_ID};
+	my $master  = $hash->{IODev};
+	
+	if ($master and $owx_dev) {
+		return OWX_AwaitExecuteResponse($master,"page$page",$owx_dev);
+	} else {
+		return undef;
+	}
 }
 
 ########################################################################################
@@ -1253,6 +1263,19 @@ sub OWXCOUNT_SetPage($$$) {
   return undef;
 }
 
+sub OWXCOUNT_AfterExecute() {
+  my ( $hash, $context, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
+  
+  my $loglevel = main::GetLogLevel($hash->{NAME},6);
+  return unless ($success and $context);
+  
+  CONTEXT: {
+    ($context =~ /^page.*/) and do {
+      return OWXCOUNT_AfterGetPage($hash,substr($context,4), $owx_dev, $data, $readdata );
+    };
+  };
+}
+   
 1;
 
 =pod
