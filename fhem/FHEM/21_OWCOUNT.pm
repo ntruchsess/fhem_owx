@@ -1181,7 +1181,6 @@ sub OWXCOUNT_AfterGetPage($$$$$) {
       }
     }
   }
- 
   return undef;
 }
 
@@ -1230,33 +1229,28 @@ sub OWXCOUNT_SetPage($$$) {
   #Log 1, "OWXCOUNT: setting page Nr. $ta2 $ta1";
   $select=sprintf("\x0F%c%c",$ta1,$ta2).$data;   
   #-- reset the bus
-  OWX_Reset($master);
   #-- reading 9 + 3 + 16 bytes = 29 bytes
-  $res=OWX_Complex($master,$owx_dev,$select,0);
-  if( $res eq 0 ){
+  unless (OWX_Execute($master,"write.$page", 1, $owx_dev, $select, 0, undef )) {
     return "device $owx_dev not accessible in writing scratchpad"; 
   }
   
   #-- issue the match ROM command \x55 and the read scratchpad command
   #   \xAA 
   #-- reset the bus
-  OWX_Reset($master);
   #-- reading 9 + 4 + 16 bytes = 28 bytes
   # TODO: sometimes much less than 28
-  $res=OWX_Complex($master,$owx_dev,"\xAA",28);
-  if( length($res) < 13 ){
+  unless (OWX_Execute($master,"read.$page", 1, $owx_dev,"\xAA", 28, undef)
+    and ($res = OWX_AwaitExecuteResponse($master,"read.$page",$owx_dev))
+    and length($res) > 2 ) {
     return "device $owx_dev not accessible in reading scratchpad"; 
   }
 
   #-- issue the match ROM command \x55 and the copy scratchpad command
   #   \x5A followed by 3 byte authentication code
-  $select="\x5A".substr($res,10,3);
+  $select="\x5A".substr($res,0,3);
   #-- reset the bus
-  OWX_Reset($master);
-  $res=OWX_Complex($master,$owx_dev,$select,6);
-  
-  #-- process results
-  if( $res eq 0 ){
+  unless (OWX_Execute($master,"copy.$page", 1, $owx_dev, $select, 6, undef)
+    and OWX_AwaitExecuteResponse($master,"copy.$page",$owx_dev)) {
     return "device $owx_dev not accessible for writing"; 
   }
   
@@ -1274,6 +1268,8 @@ sub OWXCOUNT_AfterExecute() {
       return OWXCOUNT_AfterGetPage($hash,substr($context,4), $owx_dev, $data, $readdata );
     };
   };
+  $hash->{PRESENT} = 1; 
+  return undef;
 }
    
 1;
