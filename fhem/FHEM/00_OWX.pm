@@ -159,8 +159,6 @@ sub OWX_Define ($$) {
 	my ($hash, $def) = @_;
 	my @a = split("[ \t][ \t]*", $def);
   
-	my $owx_hwdevice;
-  
 	#-- check syntax
    	return "OWX: Syntax error - must be define <name> OWX <serial-device>|<cuno/coc-device>|<arduino-pin>" if(int(@a) < 3);
 
@@ -204,7 +202,9 @@ sub OWX_Define ($$) {
 }
 
 sub OWX_Ready ($) {
-	OWX_Init(@_);	
+	my $hash = shift;
+	OWX_Init(@_) unless $hash->{STATE} ne "Active";
+	return 1;
 };
 
 sub OWX_Poll ($) {
@@ -214,14 +214,32 @@ sub OWX_Poll ($) {
 	};
 };
 
-sub OWX_Disconnected($) {
+sub OWX_Disconnect($) {
 	my ($hash) = @_;
 	my $async = $hash->{ASYNC};
-	main::Log (1, "OWX_Disconnected");
+	main::Log (1, "OWX_Disconnect");
 	if (defined $async) {
 		$async->exit($hash);
-		$hash->{ASYNC} = undef;
-	};  
+	};
+	my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
+	for (my $i=0;$i<$times;$i++) {
+		OWX_Poll($hash);
+		if ($hash->{STATE} ne "Active") {
+			last;
+		}
+	};
+};
+
+sub OWX_Disconnected($) {
+	my ($hash) = @_;
+	main::Log (1, "OWX_Disconnected");
+	if (my $async = $hash->{ASYNC}) {
+		delete $hash->{ASYNC};
+	};
+	if (my $owx = $hash->{OWX}) {
+		$owx->Disconnect($hash);
+	};
+	$hash->{STATE} = "disconnected" if $hash->{STATE} eq "Active";
 };	
 
 ########################################################################################
@@ -846,7 +864,7 @@ sub OWX_Init ($) {
   	if ($owx->Init($hash)) {
       $hash->{PRESENT} = 0;
       readingsSingleUpdate($hash,"state","failed",1);
-      $init_done = 1; 
+      $main::init_done = 1; 
       return "OWX_Init failed";
     }
    	$hash->{INTERFACE} = $owx->{interface};
@@ -856,9 +874,12 @@ sub OWX_Init ($) {
   
   if ($hash->{INTERFACE} eq "firmata") {
   	$hash->{ASYNC} = $owx;
-  } else {
-	require "$attr{global}{modpath}/FHEM/11_OWX_Executor.pm";
-	$hash->{ASYNC} = OWX_AsyncExecutor->new($owx);
+  } elsif (($hash->{INTERFACE} eq "DS2480") or ($hash->{INTERFACE} eq "DS9097")) {
+	require "$main::attr{global}{modpath}/FHEM/11_OWX_Executor.pm";
+	$hash->{ASYNC} = OWX_AsyncExecutor->new($owx,undef);
+  } elsif (($hash->{INTERFACE} eq "COC") or ($hash->{INTERFACE} eq "CUNO")) {
+	require "$main::attr{global}{modpath}/FHEM/11_OWX_Executor.pm";
+	$hash->{ASYNC} = OWX_AsyncExecutor->new($owx,$owx->{hwdevice});
   }
   
   #-- Fourth step: discovering devices on the bus
@@ -871,13 +892,13 @@ sub OWX_Init ($) {
   $hash->{ALARMED}      = "no";
   
   #-- InternalTimer blocks if init_done is not true
-  my $oid = $init_done;
+  my $oid = $main::init_done;
   $hash->{PRESENT} = 1;
   readingsSingleUpdate($hash,"state","defined",1);
-  $init_done = 1;
+  $main::init_done = 1;
   #-- Intiate first alarm detection and eventually conversion in a minute or so
   InternalTimer(gettimeofday() + $hash->{interval}, "OWX_Kick", $hash,1);
-  $init_done     = $oid;
+  $main::init_done     = $oid;
   $hash->{STATE} = "Active";
   return undef;
 }
@@ -1010,7 +1031,7 @@ sub OWX_Set($@) {
 sub OWX_Undef ($$) {
   my ($hash, $name) = @_;
   RemoveInternalTimer($hash);
-  DevIo_CloseDev($hash);
+  OWX_Disconnect($hash);
   return undef;
 }
 

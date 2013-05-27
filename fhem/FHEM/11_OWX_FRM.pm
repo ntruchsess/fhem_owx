@@ -227,7 +227,7 @@ sub execute($$$$$$) {
 
 sub exit($) {
 	my ($self,$hash) = @_;
-	#TODO handle disconnect...
+	main::OWX_Disconnected($hash);
 };
 
 sub poll($) {

@@ -11,8 +11,8 @@ use constant {
 use threads;
 use Thread::Queue;
 
-sub new($) {
-	my ( $class, $owx ) = @_;
+sub new($$) {
+	my ( $class, $owx , $iodev) = @_;
 	my $requests   = Thread::Queue->new();
 	my $responses  = Thread::Queue->new();
 	my $worker = OWX_Worker->new($owx,$requests,$responses);
@@ -25,22 +25,28 @@ sub new($) {
 		requests     => $requests,
 		responses    => $responses,
 		workerthread => $thr,
-		owx => $owx
+		owx => $owx,
+		iodev => $iodev,
+		onselectlist => 0,
+		onreadyfnlist => 0,
 	}, $class;
 }
 
 sub search() {
 	my $self = shift;
+	$self->alloc_device();
 	$self->{requests}->enqueue( { command => SEARCH } );
 }
 
 sub alarms() {
 	my $self = shift;
+	$self->alloc_device();
 	$self->{requests}->enqueue( { command => ALARMS } );
 }
 
 sub execute($$$$$$) {
 	my ( $self, $context, $reset, $owx_dev, $data, $numread, $delay ) = @_;
+	$self->alloc_device();
 	$self->{requests}->enqueue(
 		{
 			command   => EXECUTE,
@@ -61,7 +67,6 @@ sub exit($) {
 			command => EXIT
 		}
 	);
-	$self->{owx}->Disconnect($hash);
 }
 
 sub poll($) {
@@ -76,6 +81,7 @@ sub poll($) {
 		RESPONSE_HANDLER: {
 			
 			$command eq SEARCH and do {
+				$self->release_device();
 				return unless $item->{success};
 				my @devices = split(/;/,$item->{devices});
 				main::OWX_AfterSearch($hash,\@devices);
@@ -83,6 +89,7 @@ sub poll($) {
 			};
 			
 			$command eq ALARMS and do {
+				$self->release_device();
 				return unless $item->{success};
 				my @devices = split(/;/,$item->{devices});
 				main::OWX_AfterAlarms($hash,\@devices);
@@ -90,6 +97,7 @@ sub poll($) {
 			};
 				
 			$command eq EXECUTE and do {
+				$self->release_device();
 				main::OWX_AfterExecute($hash,$item->{context},$item->{success},$item->{reset},$item->{address},$item->{writedata},$item->{numread},$item->{readdata});
 				last;
 			};
@@ -99,6 +107,56 @@ sub poll($) {
 				main::Log($loglevel <6 ? $loglevel : $item->{level},$item->{message});
 				last;
 			};
+			
+			$command eq EXIT and do {
+				if (my $iodev = $self->{iodev} and my $key = $self->{iodevkey}) {
+					if ($self->{onselectlist}>0) {
+						$main::selectlist{$key} = $iodev;
+						$self->{onselectlist} = 0;
+					};
+					if ($self->{onreadyfnlist}>0) {
+						$main::readyfnlist{$key} = $iodev;
+						$self->{onreadyfnlist} = 0;
+					};
+				};
+				main::OWX_Disconnected($hash);
+				last;
+			};
+		};
+	};
+};
+
+sub alloc_device() {
+	my ($self) = @_;
+	if (my $iodev = $self->{iodev}) {
+		my $name = $iodev->{NAME};
+		foreach my $p (keys %main::selectlist) {
+			if ($name eq $main::selectlist{$p}{NAME}) {
+				$self->{iodevkey} = $p;
+				$self->{onselectlist}++;
+				delete $main::selectlist{$p} ;
+			};
+		};
+		foreach my $p (keys %main::readyfnlist) {
+			if ($name eq $main::readyfnlist{$p}{NAME}) {
+				$self->{iodevkey} = $p;
+				$self->{onreadyfnlist}++;
+				delete $main::readyfnlist{$p};
+			};
+		};
+	};
+};
+
+sub release_device() {
+	my ($self) = @_;
+	if (my $iodev = $self->{iodev} and my $key = $self->{iodevkey}) {
+		if ($self->{onselectlist}>0) {
+			$main::selectlist{$key} = $iodev;
+			$self->{onselectlist}--;
+		};
+		if ($self->{onreadyfnlist}>0) {
+			$main::readyfnlist{$key} = $iodev;
+			$self->{onreadyfnlist}--;
 		};
 	};
 };
@@ -183,7 +241,9 @@ sub run() {
 			};
 			
 			$command eq EXIT and do {
-				return undef;
+				$responses->enqueue($item);
+				last;
+				#return undef;
 			};
 		};
 	};
