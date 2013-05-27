@@ -224,9 +224,8 @@ sub Discover () {
 #
 ########################################################################################
 
-sub Init () { 
-  my ($self) = @_;
-  my $hash = $self->{hash};
+sub Init ($) { 
+  my ($self,$hash) = @_;
   
   #-- get the interface
   my $hwdevice  = $self->{hwdevice};
