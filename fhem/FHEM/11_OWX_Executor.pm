@@ -67,7 +67,6 @@ sub exit($) {
 			command => EXIT
 		}
 	);
-	$self->{owx}->Disconnect($hash);
 }
 
 sub poll($) {
@@ -106,6 +105,21 @@ sub poll($) {
 			$command eq LOG and do {
 				my $loglevel = main::GetLogLevel($hash->{NAME},6);
 				main::Log($loglevel <6 ? $loglevel : $item->{level},$item->{message});
+				last;
+			};
+			
+			$command eq EXIT and do {
+				if (my $iodev = $self->{iodev} and my $key = $self->{iodevkey}) {
+					if ($self->{onselectlist}>0) {
+						$main::selectlist{$key} = $iodev;
+						$self->{onselectlist} = 0;
+					};
+					if ($self->{onreadyfnlist}>0) {
+						$main::readyfnlist{$key} = $iodev;
+						$self->{onreadyfnlist} = 0;
+					};
+				};
+				main::OWX_Disconnected($hash);
 				last;
 			};
 		};
@@ -227,7 +241,9 @@ sub run() {
 			};
 			
 			$command eq EXIT and do {
-				return undef;
+				$responses->enqueue($item);
+				last;
+				#return undef;
 			};
 		};
 	};

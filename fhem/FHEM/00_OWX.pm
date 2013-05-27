@@ -202,7 +202,9 @@ sub OWX_Define ($$) {
 }
 
 sub OWX_Ready ($) {
-	OWX_Init(@_);	
+	my $hash = shift;
+	OWX_Init(@_) unless $hash->{STATE} ne "Active";
+	return 1;
 };
 
 sub OWX_Poll ($) {
@@ -212,14 +214,32 @@ sub OWX_Poll ($) {
 	};
 };
 
-sub OWX_Disconnected($) {
+sub OWX_Disconnect($) {
 	my ($hash) = @_;
 	my $async = $hash->{ASYNC};
-	main::Log (1, "OWX_Disconnected");
+	main::Log (1, "OWX_Disconnect");
 	if (defined $async) {
 		$async->exit($hash);
-		$hash->{ASYNC} = undef;
-	};  
+	};
+	my $times = AttrVal($hash,"timeout",5000) / 50; #timeout in ms, defaults to 1 sec #TODO add attribute timeout?
+	for (my $i=0;$i<$times;$i++) {
+		OWX_Poll($hash);
+		if ($hash->{STATE} ne "Active") {
+			last;
+		}
+	};
+};
+
+sub OWX_Disconnected($) {
+	my ($hash) = @_;
+	main::Log (1, "OWX_Disconnected");
+	if (my $async = $hash->{ASYNC}) {
+		delete $hash->{ASYNC};
+	};
+	if (my $owx = $hash->{OWX}) {
+		$owx->Disconnect($hash);
+	};
+	$hash->{STATE} = "disconnected" if $hash->{STATE} eq "Active";
 };	
 
 ########################################################################################
@@ -856,7 +876,7 @@ sub OWX_Init ($) {
   	$hash->{ASYNC} = $owx;
   } elsif (($hash->{INTERFACE} eq "DS2480") or ($hash->{INTERFACE} eq "DS9097")) {
 	require "$main::attr{global}{modpath}/FHEM/11_OWX_Executor.pm";
-	$hash->{ASYNC} = OWX_AsyncExecutor->new($owx,$hash);
+	$hash->{ASYNC} = OWX_AsyncExecutor->new($owx,undef);
   } elsif (($hash->{INTERFACE} eq "COC") or ($hash->{INTERFACE} eq "CUNO")) {
 	require "$main::attr{global}{modpath}/FHEM/11_OWX_Executor.pm";
 	$hash->{ASYNC} = OWX_AsyncExecutor->new($owx,$owx->{hwdevice});
@@ -1011,7 +1031,7 @@ sub OWX_Set($@) {
 sub OWX_Undef ($$) {
   my ($hash, $name) = @_;
   RemoveInternalTimer($hash);
-  DevIo_CloseDev($hash);
+  OWX_Disconnect($hash);
   return undef;
 }
 
