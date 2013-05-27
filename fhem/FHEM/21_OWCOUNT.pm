@@ -1163,15 +1163,13 @@ sub OWXCOUNT_AfterGetPage($$$$$) {
       $owg_val[0] = $value;
       #-- parse float from midnight
       $owg_str =~ s/[^\d\.]+//g;
-      $owg_str = int($owg_str*100)/100;
-      $owg_str = 0.0 if(!(defined($owg_str)));
+      $owg_str = $owg_str ? int($owg_str*100)/100 : 0.0;
       $owg_midnight[0] = $owg_str;
     }elsif( $page == 15) {
       $owg_val[1] = $value;
       #-- parse float from midnight
       $owg_str =~ s/[^\d\.]+//g;
-      $owg_str = int($owg_str*100)/100;
-      $owg_str = 0.0 if(!(defined($owg_str)));
+      $owg_str = $owg_str ? int($owg_str*100)/100 : 0.0;
       $owg_midnight[1] = $owg_str;
     }
     if ($page == 15) {
