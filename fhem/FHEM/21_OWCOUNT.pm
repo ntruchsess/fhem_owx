@@ -80,7 +80,7 @@ use strict;
 use warnings;
 sub Log($$);
 
-my $owx_version="3.23";
+my $owx_version="3.24";
 #-- fixed raw channel name, flexible channel name
 my @owg_fixed   = ("A","B");
 my @owg_channel = ("A","B");
@@ -214,7 +214,7 @@ sub OWCOUNT_Define ($$) {
   $crc = defined($hash->{IODev}->{INTERFACE}) ?  sprintf("%02x",OWX_CRC($fam.".".$id."00")) : "00";
   
   #-- Define device internals
-  $hash->{ROM_ID}     = $fam.".".$id.$crc;
+  $hash->{ROM_ID}     = $fam.".".$id.".".$crc;
   $hash->{OW_ID}      = $id;
   $hash->{OW_FAMILY}  = $fam;
   $hash->{PRESENT}    = 0;
