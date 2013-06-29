@@ -1,5 +1,3 @@
-package OWX_Executor;
-use strict;
 use warnings;
 use constant {
 	SEARCH  => 1,
@@ -207,6 +205,8 @@ use constant {
 	LOG     => 5
 };
 
+use Time::HiRes qw( gettimeofday tv_interval usleep );
+
 sub new($$$) {
 	my ( $class, $owx, $requests, $responses ) = @_;
 
@@ -221,9 +221,32 @@ sub run() {
 	my $self = shift;
 	my $requests = $self->{requests};
 	my $responses = $self->{responses};
+	my %delayed = ();
 	my $owx = $self->{owx};
 	$owx->{logger} = $self;
-	while ( my $item = $requests->dequeue() ) {
+	while ( 1 ) {
+	  my $item = undef;
+		foreach my $address (keys %delayed) {
+			next if (tv_interval($delayed{$address}->{'until'}) < 0);
+			my @now = gettimeofday;
+			my @delayed_items = @{$delayed{$address}->{'items'}}; 
+			$item = shift @delayed_items;
+			delete $delayed{$address} unless scalar(@delayed_items);# or $item->{delay};
+			last;
+		};
+		unless ($item) {
+			$item = $requests->dequeue_nb();
+			if ($item and my $address = $item->{address}) {
+				if ($delayed{$address}) {
+					push @{$delayed{$address}->{'items'}},$item;
+					next; 
+				};
+			};
+		};
+		unless ($item) {
+			usleep(1000); #if there is no item to process sleep 1ms so we do not hog the cpu
+			next;
+		}
 		REQUEST_HANDLER: {
 			my $command = $item->{command};
 			
@@ -259,19 +282,35 @@ sub run() {
 						last;
 					};
 				};
-				my $res = $owx->Complex($item->{address},$item->{writedata},$item->{numread});
+				my $address = $item->{address};
+				my $res = $owx->Complex($address,$item->{writedata},$item->{numread});
 				if (defined $res) {
 					my $writelen = defined $item->{writedata} ? split (//,$item->{writedata}) : 0;
 					my @result = split (//, $res);
 					$item->{readdata} = 9+$writelen < @result ? substr($res,9+$writelen) : "";
 					$item->{success} = 1;
 					$responses->enqueue($item);
-					if ($item->{delay}) {
-						select (undef,undef,undef,$item->{delay}/1000); #TODO implement device (address) specific wait
-					}
 				} else {
 					$item->{success} = 0;
 					$responses->enqueue($item);
+				}
+				if (my $delay = $item->{delay}) {
+					if ($address) {
+						unless ($delayed{$address}) {
+							$delayed{$address} = { items => [] };
+						}
+						my ($seconds,$micros) = gettimeofday;
+            my $len = length ($delay); #delay is millis, tv_address works with [sec,micros]
+            if ($len>3) {
+              $seconds += substr($delay,0,$len-3);
+              $micros += (substr ($delay,$len-8).000);
+            } else {
+              $micros += ($delay.000);
+            }
+						$delayed{$address}->{'until'} = [$seconds,$micros];
+					} else {
+						select (undef,undef,undef,$delay/1000);
+					}
 				}
 				last;
 			};
@@ -279,7 +318,8 @@ sub run() {
 			$command eq EXIT and do {
 				$responses->enqueue($item);
 				last;
-				#return undef;
+				#TODO my perl crashes with double deallocation when leaving the thread...
+				#return undef; #exit the thread
 			};
 		};
 	};
