@@ -1,4 +1,4 @@
-use warnings;
+package OWX_Executor;
 use constant {
 	SEARCH  => 1,
 	ALARMS  => 2,
@@ -6,6 +6,10 @@ use constant {
 	EXIT    => 4,
 	LOG     => 5
 };
+
+package OWX_SyncExecutor;
+use strict;
+use warnings;
 
 sub new($) {
 	my ( $class, $owx ) = @_;
@@ -17,19 +21,19 @@ sub new($) {
 
 sub search() {
 	my $self = shift;
-	push @{$self->{commands}},{ command => SEARCH, devices => $self->{owx}->Discover() }; 
+	push @{$self->{commands}},{ command => OWX_Executor::SEARCH, devices => $self->{owx}->Discover() }; 
 };
 
 sub alarms() {
 	my $self = shift;
-	push @{$self->{commands}},{ command => ALARMS, devices => $self->{owx}->Alarms() }; 
+	push @{$self->{commands}},{ command => OWX_Executor::ALARMS, devices => $self->{owx}->Alarms() }; 
 }
 
 sub execute($$$$$$) {
 	my ( $self, $context, $reset, $owx_dev, $data, $numread, $delay ) = @_;
 	my $owx = $self->{owx};
 	my $item = {
-		command   => EXECUTE,
+		command   => OWX_Executor::EXECUTE,
 		context   => $context,
 		reset     => $reset,
 		address   => $owx_dev,
@@ -70,15 +74,15 @@ sub poll($) {
 	while (my $item = shift @{$self->{commands}}) {
 		my $command = $item->{command};
 		COMMANDS: {
-			$command eq SEARCH and do {
+			$command eq OWX_Executor::SEARCH and do {
 				main::OWX_AfterSearch($hash,$item->{devices});
 				last;
 			};
-			$command eq ALARMS and do {
+			$command eq OWX_Executor::ALARMS and do {
 				main::OWX_AfterAlarms($hash,$item->{devices});
 				last;
 			};
-			$command eq EXECUTE and do {
+			$command eq OWX_Executor::EXECUTE and do {
 				main::OWX_AfterExecute($hash,$item->{context},$item->{success},$item->{reset},$item->{address},$item->{writedata},$item->{numread},$item->{readdata});
 				last;
 			};
@@ -89,13 +93,6 @@ sub poll($) {
 package OWX_AsyncExecutor;
 use strict;
 use warnings;
-use constant {
-	SEARCH  => 1,
-	ALARMS  => 2,
-	EXECUTE => 3,
-	EXIT    => 4,
-	LOG     => 5
-};
 use threads;
 use Thread::Queue;
 
@@ -119,19 +116,19 @@ sub new($) {
 
 sub search() {
 	my $self = shift;
-	$self->{requests}->enqueue( { command => SEARCH } );
+	$self->{requests}->enqueue( { command => OWX_Executor::SEARCH } );
 }
 
 sub alarms() {
 	my $self = shift;
-	$self->{requests}->enqueue( { command => ALARMS } );
+	$self->{requests}->enqueue( { command => OWX_Executor::ALARMS } );
 }
 
 sub execute($$$$$$) {
 	my ( $self, $context, $reset, $owx_dev, $data, $numread, $delay ) = @_;
 	$self->{requests}->enqueue(
 		{
-			command   => EXECUTE,
+			command   => OWX_Executor::EXECUTE,
 			context   => $context,
 			reset     => $reset,
 			address   => $owx_dev,
@@ -146,7 +143,7 @@ sub exit($) {
 	my ( $self,$hash ) = @_;
 	$self->{requests}->enqueue(
 		{
-			command => EXIT
+			command => OWX_Executor::EXIT
 		}
 	);
 }
@@ -162,32 +159,32 @@ sub poll($) {
 		# Work on $item
 		RESPONSE_HANDLER: {
 			
-			$command eq SEARCH and do {
+			$command eq OWX_Executor::SEARCH and do {
 				return unless $item->{success};
 				my @devices = split(/;/,$item->{devices});
 				main::OWX_AfterSearch($hash,\@devices);
 				last;
 			};
 			
-			$command eq ALARMS and do {
+			$command eq OWX_Executor::ALARMS and do {
 				return unless $item->{success};
 				my @devices = split(/;/,$item->{devices});
 				main::OWX_AfterAlarms($hash,\@devices);
 				last;
 			};
 				
-			$command eq EXECUTE and do {
+			$command eq OWX_Executor::EXECUTE and do {
 				main::OWX_AfterExecute($hash,$item->{context},$item->{success},$item->{reset},$item->{address},$item->{writedata},$item->{numread},$item->{readdata});
 				last;
 			};
 			
-			$command eq LOG and do {
+			$command eq OWX_Executor::LOG and do {
 				my $loglevel = main::GetLogLevel($hash->{NAME},6);
 				main::Log($loglevel <6 ? $loglevel : $item->{level},$item->{message});
 				last;
 			};
 			
-			$command eq EXIT and do {
+			$command eq OWX_Executor::EXIT and do {
 				main::OWX_Disconnected($hash);
 				last;
 			};
@@ -197,13 +194,8 @@ sub poll($) {
 
 package OWX_Worker;
 
-use constant {
-	SEARCH  => 1,
-	ALARMS  => 2,
-	EXECUTE => 3,
-	EXIT    => 4,
-	LOG     => 5
-};
+use strict;
+use warnings;
 
 use Time::HiRes qw( gettimeofday tv_interval usleep );
 
@@ -250,7 +242,7 @@ sub run() {
 		REQUEST_HANDLER: {
 			my $command = $item->{command};
 			
-			$command eq SEARCH and do {
+			$command eq OWX_Executor::SEARCH and do {
 				my $devices = $owx->Discover();
 				if (defined $devices) {
 					$item->{success} = 1;
@@ -262,7 +254,7 @@ sub run() {
 				last;
 			};
 			
-			$command eq ALARMS and do {
+			$command eq OWX_Executor::ALARMS and do {
 				my $devices = $owx->Alarms();
 				if (defined $devices) {
 					$item->{success} = 1;
@@ -274,7 +266,7 @@ sub run() {
 				last;
 			};
 	
-			$command eq EXECUTE and do {
+			$command eq OWX_Executor::EXECUTE and do {
 				if (defined $item->{reset}) {
 					if(!$owx->Reset()) {
 						$item->{success}=0;
@@ -315,7 +307,7 @@ sub run() {
 				last;
 			};
 			
-			$command eq EXIT and do {
+			$command eq OWX_Executor::EXIT and do {
 				$responses->enqueue($item);
 				last;
 				#TODO my perl crashes with double deallocation when leaving the thread...
@@ -329,7 +321,7 @@ sub log($$) {
 	my ($self,$level,$msg) = @_;
 	my $responses = $self->{responses};
 	$responses->enqueue({
-		command => LOG,
+		command => OWX_Executor::LOG,
 		level   => $level,
 		message => $msg
 	});

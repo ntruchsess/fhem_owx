@@ -879,7 +879,7 @@ sub OWX_Init ($) {
 	$hash->{ASYNC} = OWX_AsyncExecutor->new($owx);
   } elsif (($hash->{INTERFACE} eq "COC") or ($hash->{INTERFACE} eq "CUNO")) {
 	require "$main::attr{global}{modpath}/FHEM/11_OWX_Executor.pm";
-	$hash->{ASYNC} = OWX_Executor->new($owx);
+	$hash->{ASYNC} = OWX_SyncExecutor->new($owx);
   }
   
   #-- Fourth step: discovering devices on the bus
