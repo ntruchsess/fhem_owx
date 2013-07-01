@@ -203,7 +203,7 @@ sub OWX_Define ($$) {
 
 sub OWX_Ready ($) {
 	my $hash = shift;
-	OWX_Init(@_) unless $hash->{STATE} ne "Active";
+	OWX_Init(@_) unless $hash->{STATE} eq "Active";
 	return 1;
 };
 
@@ -263,7 +263,7 @@ sub OWX_Alarms ($) {
 
 	if (defined $async) {
 		delete $hash->{ALARMDEVS};
-		return $async->alarms();
+		return $async->alarms($hash);
 	} else {
 		#-- interface error
 		my $owx_interface = $hash->{INTERFACE};
@@ -599,7 +599,7 @@ sub OWX_Search($) {
 	#-- Discover all devices on the 1-Wire bus, they will be found in $hash->{DEVS}
 	if (defined $async) {
 		delete $hash->{DEVS};
-		$async->search();
+		$async->search($hash);
 		return 1;		
 	} else {
 		my $owx_interface = $hash->{INTERFACE};
@@ -852,7 +852,7 @@ sub OWX_Init ($) {
   my ($hash)=@_;
   
   if (defined ($hash->{ASNYC})) {
-  	$hash->{ASYNC}->exit();
+  	$hash->{ASYNC}->exit($hash);
   	$hash->{ASYNC} = undef; #TODO should we call delete on $hash->{ASYNC}?
   } 
   #-- get the interface
@@ -876,10 +876,10 @@ sub OWX_Init ($) {
   	$hash->{ASYNC} = $owx;
   } elsif (($hash->{INTERFACE} eq "DS2480") or ($hash->{INTERFACE} eq "DS9097")) {
 	require "$main::attr{global}{modpath}/FHEM/11_OWX_Executor.pm";
-	$hash->{ASYNC} = OWX_AsyncExecutor->new($owx);
+	$hash->{ASYNC} = OWX_Executor->new($owx,1);
   } elsif (($hash->{INTERFACE} eq "COC") or ($hash->{INTERFACE} eq "CUNO")) {
 	require "$main::attr{global}{modpath}/FHEM/11_OWX_Executor.pm";
-	$hash->{ASYNC} = OWX_SyncExecutor->new($owx);
+	$hash->{ASYNC} = OWX_Executor->new($owx,undef);
   }
   
   #-- Fourth step: discovering devices on the bus
@@ -955,7 +955,7 @@ sub OWX_Reset ($) {
 	my $async = $hash->{ASYNC};
   
 	if (defined $async) {
-		return $async->execute("OWX_Reset",1, undef, "", 0, undef );
+		return $async->execute($hash,"OWX_Reset",1, undef, "", 0, undef );
 	} else {  	
 		#-- interface error
 		my $owx_interface = $hash->{INTERFACE};
@@ -1087,7 +1087,7 @@ sub OWX_Execute($$$$$$$) {
 	my ( $hash, $context, $reset, $owx_dev, $data, $numread, $delay ) = @_;
 	if (my $executor = $hash->{ASYNC}) {
 		delete $hash->{replies}{$owx_dev}{$context} if (defined $owx_dev and defined $context);
-		return $executor->execute( $context, $reset, $owx_dev, $data, $numread, $delay );
+		return $executor->execute( $hash, $context, $reset, $owx_dev, $data, $numread, $delay );
 	} else {
 		return 0;
 	}
