@@ -48,25 +48,26 @@ sub _submit($$) {
 	my ($self,$command,$hash) = @_;
 	if ($self->{daemon}) {
 		$self->{requests}->enqueue( $command );
+		return 1;
 	} else {
 		push @{$self->{commands}}, $command;
-		$self->{worker}->work($hash);
+		return $self->{worker}->work($hash);
 	}
 }
 
 sub search($) {
 	my ($self,$hash) = @_;
-	$self->_submit( { command => SEARCH }, $hash );
+	return $self->_submit( { command => SEARCH }, $hash );
 }
 
 sub alarms($) {
 	my ($self,$hash) = @_;
-	$self->_submit( { command => ALARMS }, $hash );
+	return $self->_submit( { command => ALARMS }, $hash );
 }
 
 sub execute($$$$$$$) {
 	my ( $self, $hash, $context, $reset, $owx_dev, $data, $numread, $delay ) = @_;
-	$self->_submit( {
+	return $self->_submit( {
 		command   => EXECUTE,
 		context   => $context,
 		reset     => $reset,
@@ -79,7 +80,7 @@ sub execute($$$$$$$) {
 
 sub exit($) {
 	my ( $self,$hash ) = @_;
-	$self->_submit( { command => EXIT }, $hash );
+	return $self->_submit( { command => EXIT }, $hash );
 }
 
 sub poll($) {
@@ -160,7 +161,14 @@ sub new($$$) {
 
 sub run() {
 	my $self = shift;
-	while ($self->work()) {};
+	eval {
+		while ($self->work()) {};
+	};
+	if ($@) {
+		$self->log(2,"Error executing OWX_Worker. Reason: $@");
+		$self->{responses}->enqueue({ command => OWX_Executor::EXIT });
+	}
+	return undef;
 };
 
 sub work(;$) {
