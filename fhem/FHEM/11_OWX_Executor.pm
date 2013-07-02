@@ -20,7 +20,7 @@ sub new($) {
 	$daemon = 0 unless $can_use_threads;
 
 	if ($daemon) {
-		my $requests   = Thread::Queue->new();
+	  my $requests   = Thread::Queue->new();
 		my $responses  = Thread::Queue->new();
 		threads->create(
 			sub {
@@ -34,7 +34,7 @@ sub new($) {
 			daemon       => 1
 		}, $class;
 	} else {
-		my $commands = [];
+	  my $commands = [];
 		return bless {
 			commands => $commands,
 			worker   => OWX_Worker->new($owx,$commands,undef,0),
@@ -153,6 +153,8 @@ sub new($$$) {
 	}, $class;
 	
 	$owx->{logger} = $self;
+	
+	$self->log(5,"OWX_Worker started device $owx->{interface}");
 	
 	return $self;
 };

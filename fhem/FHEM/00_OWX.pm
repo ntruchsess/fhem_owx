@@ -71,6 +71,8 @@ if( $^O =~ /Win/ ) {
   $SER_regexp= "/dev/";
 } 
 
+use Time::HiRes qw(gettimeofday);
+
 require "$main::attr{global}{modpath}/FHEM/DevIo.pm";
 sub Log($$);
 
@@ -144,7 +146,7 @@ sub OWX_Initialize ($) {
   $hash->{ReadFn}  = "OWX_Poll";
   $hash->{ReadyFn} = "OWX_Ready";
   $hash->{InitFn}  = "OWX_Init";
-  $hash->{AttrList}= "loglevel:0,1,2,3,4,5,6 dokick:0,1 IODev";
+  $hash->{AttrList}= "loglevel:0,1,2,3,4,5,6 dokick:0,1 async:0,1 IODev";
 }
 
 ########################################################################################
@@ -194,16 +196,20 @@ sub OWX_Define ($$) {
   	
   $hash->{OWX} = $owx;
   $hash->{INTERFACE} = $owx->{interface};
-  
-	#-- continue definition of OWX if interface define was ok, but init failed	
-	$ret = OWX_Init($hash);  
-	Log (GetLogLevel($hash->{NAME},2),"OWX: Error initializing ".$hash->{NAME}.": ".$ret) if ($ret);
+
+  $hash->{STATE} = "Defined";
+  $dev = split('@',$dev);
+  #-- let fhem.pl MAIN call OWX_Ready when setup is done.
+  $main::readyfnlist{"$hash->{NAME}.$dev"} = $hash;
 	return undef;
 }
 
 sub OWX_Ready ($) {
-	my $hash = shift;
-	OWX_Init(@_) unless $hash->{STATE} eq "Active";
+  my $hash = shift;
+  unless ( $hash->{STATE} eq "Active" ) {
+    my $ret = OWX_Init($hash);
+    Log (GetLogLevel($hash->{NAME},2),"OWX: Error initializing ".$hash->{NAME}.": ".$ret) if ($ret);
+  }
 	return 1;
 };
 
@@ -876,7 +882,7 @@ sub OWX_Init ($) {
   	$hash->{ASYNC} = $owx;
   } elsif (($hash->{INTERFACE} eq "DS2480") or ($hash->{INTERFACE} eq "DS9097")) {
 	require "$main::attr{global}{modpath}/FHEM/11_OWX_Executor.pm";
-	$hash->{ASYNC} = OWX_Executor->new($owx,1);
+	$hash->{ASYNC} = OWX_Executor->new($owx,main::AttrVal($hash->{NAME},"async",1));
   } elsif (($hash->{INTERFACE} eq "COC") or ($hash->{INTERFACE} eq "CUNO")) {
 	require "$main::attr{global}{modpath}/FHEM/11_OWX_Executor.pm";
 	$hash->{ASYNC} = OWX_Executor->new($owx,undef);
