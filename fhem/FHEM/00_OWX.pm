@@ -329,6 +329,15 @@ sub OWX_AwaitAlarmsResponse($) {
 sub OWX_AfterAlarms($$) {
   my ($hash,$alarmed_devs) = @_;
   $hash->{ALARMDEVS} = $alarmed_devs;
+  OWX_forall_clients($hash,sub {
+  	my ($hash,$alarmed_devs) = @_;
+  	my $romid = $hash->{ROM_ID};
+  	if (grep {/$romid/} @$alarmed_devs) {
+  		readingsSingleUpdate($hash,"ALARM",1,1) unless ($hash->{PRESENT});
+  	} else {
+  		readingsSingleUpdate($hash,"ALARM",0,1) if ($hash->{PRESENT});
+  	}
+  });
 };
 
 ########################################################################################
@@ -669,6 +678,15 @@ sub OWX_AfterSearch($$) {
   my ($hash,$owx_devs) = @_;
   if (defined $owx_devs and (ref($owx_devs) eq "ARRAY")) {
   	$hash->{DEVS} = $owx_devs;
+  	OWX_forall_clients($hash,sub {
+  		my ($hash,$owx_devs) = @_;
+  		my $romid = $hash->{ROM_ID};
+  		if (grep {/$romid/} @$owx_devs) {
+  			readingsSingleUpdate($hash,"PRESENT",1,1) unless ($hash->{PRESENT});
+  		} else {
+  			readingsSingleUpdate($hash,"PRESENT",0,1) if ($hash->{PRESENT});
+  		}
+  	});
   }
 }
 
@@ -942,6 +960,20 @@ sub OWX_Kick($) {
     select(undef,undef,undef,0.5);
   }
   return 1;
+}
+
+sub
+OWX_forall_clients($$@)
+{
+  my ($hash,$fn,@args) = @_;
+  foreach my $d ( sort keys %main::defs ) {
+    if (   defined( $main::defs{$d} )
+      && defined( $main::defs{$d}{IODev} )
+      && $main::defs{$d}{IODev} == $hash ) {
+      	&$fn($main::defs{$d},@args);
+    }
+  }
+  return undef;
 }
 
 ########################################################################################
