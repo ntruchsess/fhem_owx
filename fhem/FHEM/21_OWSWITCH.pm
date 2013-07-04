@@ -431,7 +431,8 @@ sub OWSWITCH_Get($@) {
 
     #-- OWX interface
     if( $interface eq "OWX" ){
-      $ret = ($hash);
+      $ret = OWXSWITCH_GetState($hash);
+      OWXSWITCH_AwaitGetState($hash);
     #-- OWFS interface
     }elsif( $interface eq "OWFS" ){
       $ret = OWFSSWITCH_GetState($hash);
@@ -450,7 +451,8 @@ sub OWSWITCH_Get($@) {
       if( int(@a)==1 );
 
     if( $interface eq "OWX" ){
-      $ret = ($hash);
+      $ret = OWXSWITCH_GetState($hash);
+      OWXSWITCH_AwaitGetState($hash);
     }elsif( $interface eq "OWServer" ){
       $ret = OWFSSWITCH_GetState($hash);
     }else{
