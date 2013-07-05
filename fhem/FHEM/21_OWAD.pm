@@ -1246,8 +1246,8 @@ sub OWXAD_GetPage($$) {
 #
 ########################################################################################
 
-sub OWXAD_AfterGetPage($$$) {
-  my ( $hash, $page, $readdata ) = @_;
+sub OWXAD_AfterGetPage($$$$) {
+  my ( $hash, $page, $command, $readdata ) = @_;
 
   #-- hash of the busmaster
   my $master = $hash->{IODev};
@@ -1256,30 +1256,30 @@ sub OWXAD_AfterGetPage($$$) {
   
   #-- process results
   my @data=split(//,$readdata);
-  return "invalid data length, ".int(@data)." instead of 13 bytes"
-    if (@data != 13); 
+  return "invalid data length, ".int(@data)." instead of 10 bytes"
+    if (@data != 10); 
   #return "invalid data"
   #  if (ord($data[17])<=0); 
   return "invalid CRC"
-    if (OWX_CRC16(substr($readdata,0,11),$data[11],$data[12])==0);  
+    if (OWX_CRC16($command.substr($readdata,0,8),$data[8],$data[9])==0);  
 
   #=============== get the voltage reading ===============================
   if( $page eq "reading"){
     for( my $i=0;$i<int(@owg_fixed);$i++){
-      $hash->{owg_val}->[$i]= int((ord($data[3+2*$i])+256*ord($data[4+2*$i]))/((1<<$owg_resoln[$i])-1) * $owg_range[$i])/1000;
+      $hash->{owg_val}->[$i]= int((ord($data[2*$i])+256*ord($data[1+2*$i]))/((1<<$owg_resoln[$i])-1) * $owg_range[$i])/1000;
     }
   #=============== get the alarm reading ===============================
   } elsif ( $page eq "alarm" ) {
     for( my $i=0;$i<int(@owg_fixed);$i++){
-      $hash->{owg_vlow}->[$i]  = int(ord($data[3+2*$i])/255 * $owg_range[$i])/1000;
-      $hash->{owg_vhigh}->[$i] = int(ord($data[4+2*$i])/255 * $owg_range[$i])/1000;
+      $hash->{owg_vlow}->[$i]  = int(ord($data[2*$i])/255 * $owg_range[$i])/1000;
+      $hash->{owg_vhigh}->[$i] = int(ord($data[1+2*$i])/255 * $owg_range[$i])/1000;
     }
   #=============== get the status reading ===============================
   } elsif ( $page eq "status" ) {
    my ($sb1,$sb2);
    for( my $i=0;$i<int(@owg_fixed);$i++){
-      $sb1 = ord($data[3+2*$i]); 
-      $sb2 = ord($data[3+2*$i+1]);
+      $sb1 = ord($data[2*$i]); 
+      $sb2 = ord($data[1+2*$i]);
       
       #-- normal operation 
       if( $sb1 && 128) {
@@ -1428,7 +1428,7 @@ sub OWXAD_AfterExecute() {
   
   CONTEXT: {
     ($context =~ /^getpage.*/) and do {
-      return OWXAD_AfterGetPage($hash,substr($context,7), $readdata );
+      return OWXAD_AfterGetPage($hash,substr($context,7), $data, $readdata );
     };
   };
   return undef;
