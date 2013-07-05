@@ -1188,9 +1188,9 @@ sub OWX_AwaitExecuteResponse($$$) {
 ########################################################################################
 
 sub OWX_AfterExecute($$$$$$$$) {
-	my ( $hash, $context, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
+	my ( $master, $context, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
 
-	my $loglevel = GetLogLevel($hash->{NAME},6);
+	my $loglevel = GetLogLevel($master->{NAME},6);
 	if ($loglevel < 6) {
 		main::Log($loglevel,"AfterExecute:".
 		" context: ".(defined $context ? $context : "undef").
@@ -1204,21 +1204,27 @@ sub OWX_AfterExecute($$$$$$$$) {
 
 	if (defined $owx_dev) {
 		foreach my $d ( sort keys %main::defs ) {
-			if (   defined( $main::defs{$d} )
-				&& defined( $main::defs{$d}{ROM_ID} )
-				&& defined( $main::defs{$d}{IODev} ) 
-				&& $main::defs{$d}{IODev} == $hash 
-				&& $main::defs{$d}{ROM_ID} eq $owx_dev ) {
-				if ($main::modules{$main::defs{$d}{TYPE}}{AfterExecuteFn}) {
-					my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $context, $success, $reset, $owx_dev, $data, $numread, $readdata);
-					main::Log($loglevel < 6 ? $loglevel : 4,"OWX_AfterExecute [".(defined $owx_dev ? $owx_dev : "unknown owx device")."]: $ret") if ($ret);
+			if ( my $hash = $main::defs{$d} ) {
+				if ( defined( $hash->{ROM_ID} )
+				  && defined( $hash->{IODev} )
+				  && $hash->{IODev} == $master
+				  && $hash->{ROM_ID} eq $owx_dev ) {
+				  if ($main::modules{$hash->{TYPE}}{AfterExecuteFn}) {
+				    my $ret = CallFn($d,"AfterExecuteFn", $hash, $context, $success, $reset, $owx_dev, $data, $numread, $readdata);
+				    main::Log($loglevel < 6 ? $loglevel : 4,"OWX_AfterExecute [".(defined $owx_dev ? $owx_dev : "unknown owx device")."]: $ret") if ($ret);
+				    if ($success) {
+				      readingsSingleUpdate($hash,"PRESENT",1,1) unless ($hash->{PRESENT});
+				    } else {
+				      readingsSingleUpdate($hash,"PRESENT",0,1) if ($hash->{PRESENT});
+				    }
+					}
 				}
-			};
-		};
+			}
+		}
 		if (defined $context) {
-			$hash->{replies}{$owx_dev}{$context} = $readdata;
-		};
-	};
+			$master->{replies}{$owx_dev}{$context} = $readdata;
+		}
+	}
 };
 
 1;
