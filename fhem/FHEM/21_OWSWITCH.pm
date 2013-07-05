@@ -241,7 +241,7 @@ sub OWSWITCH_Define ($$) {
   #if( $hash->{IODev}->{PRESENT} != 1 ){
   #  return "OWSWITCH: Warning, 1-Wire I/O device ".$hash->{IODev}->{NAME}." not present for $name.";
   #}
-  $modules{OWSWITCH}{defptr}{$id} = $hash;
+  $main::modules{OWSWITCH}{defptr}{$id} = $hash;
   #--
   readingsSingleUpdate($hash,"state","defined",1);
   Log 3, "OWSWITCH: Device $name defined."; 
@@ -736,7 +736,7 @@ sub OWSWITCH_Set($@) {
 
 sub OWSWITCH_Undef ($) {
   my ($hash) = @_;
-  delete($modules{OWSWITCH}{defptr}{$hash->{OW_ID}});
+  delete($main::modules{OWSWITCH}{defptr}{$hash->{OW_ID}});
   RemoveInternalTimer($hash);
   return undef;
 }
@@ -952,8 +952,8 @@ sub OWXSWITCH_GetState($) {
 #
 ########################################################################################
 
-sub OWXSWITCH_AfterGetState() {
-  my ( $hash, $context, $readdata ) = @_;
+sub OWXSWITCH_AfterGetState($$$$) {
+  my ( $hash, $context, $command, $readdata ) = @_;
 
   #-- hash of the busmaster
   my $master = $hash->{IODev};
@@ -964,15 +964,15 @@ sub OWXSWITCH_AfterGetState() {
   
       #-- process results
       my @data=split(//,$readdata);
-      return "invalid data length, ".int(@data)." instead of 7 bytes"
-        if (@data != 7); 
+      return "invalid data length, ".int(@data)." instead of 4 bytes"
+        if (@data != 4); 
       return "invalid CRC"
-        if ( OWX_CRC16(substr($readdata,0,5),$data[5],$data[6]) == 0);
+        if ( OWX_CRC16($command.substr($readdata,0,2),$data[2],$data[3]) == 0);
          
-      $hash->{owg_val}->[0] = (ord($data[3])>>2) & 1;
-      $hash->{owg_vax}->[0] =  ord($data[3])     & 1;
-      $hash->{owg_val}->[1] = (ord($data[3])>>3) & 1;
-      $hash->{owg_vax}->[1] = (ord($data[3])>>1) & 1;
+      $hash->{owg_val}->[0] = (ord($data[0])>>2) & 1;
+      $hash->{owg_vax}->[0] =  ord($data[0])     & 1;
+      $hash->{owg_val}->[1] = (ord($data[0])>>3) & 1;
+      $hash->{owg_vax}->[1] = (ord($data[0])>>1) & 1;
       
       last;
     };
@@ -982,15 +982,15 @@ sub OWXSWITCH_AfterGetState() {
     
       #-- process results
       my @data=split(//,$readdata);
-      return "invalid data length, ".int(@data)." instead of 13 bytes"
-        if (@data != 13); 
+      return "invalid data length, ".int(@data)." instead of 10 bytes"
+        if (@data != 10); 
       return "invalid data"
-        if (ord($data[9])!=255); 
+        if (ord($data[6])!=255); 
       return "invalid CRC"
-        if( OWX_CRC16(substr($readdata,0,11),$data[11],$data[12]) == 0);  
+        if( OWX_CRC16($command.substr($readdata,0,8),$data[8],$data[9]) == 0);  
       for(my $i=0;$i<8;$i++){
-        $hash->{owg_val}->[$i] = (ord($data[3])>>$i) & 1;
-        $hash->{owg_vax}->[$i] = (ord($data[4])>>$i) & 1;
+        $hash->{owg_val}->[$i] = (ord($data[0])>>$i) & 1;
+        $hash->{owg_vax}->[$i] = (ord($data[1])>>$i) & 1;
       };
       
       last;
@@ -1000,17 +1000,17 @@ sub OWXSWITCH_AfterGetState() {
       
       #-- process results
       @data=split(//,$readdata);
-      return "invalid data length, ".int(@data)." instead of 3 bytes"
-        if (@data != 3); 
+      return "invalid data length, ".int(@data)." instead of 2 bytes"
+        if (@data != 2); 
       return "invalid data"
-        if ( (15- (ord($data[1])>>4)) != (ord($data[1]) & 15) );
+        if ( (15- (ord($data[0])>>4)) != (ord($data[0]) & 15) );
       
       #   note: value 1 corresponds to OFF, 0 to ON normally
       #   note: val = input value, vax = output value
-      $hash->{owg_val}->[0] = ord($data[1])      & 1;
-      $hash->{owg_vax}->[0] = (ord($data[1])>>1) & 1;
-      $hash->{owg_val}->[1] = (ord($data[1])>>2) & 1;
-      $hash->{owg_vax}->[1] = (ord($data[1])>>3) & 1;
+      $hash->{owg_val}->[0] = ord($data[0])      & 1;
+      $hash->{owg_vax}->[0] = (ord($data[0])>>1) & 1;
+      $hash->{owg_val}->[1] = (ord($data[0])>>2) & 1;
+      $hash->{owg_vax}->[1] = (ord($data[0])>>3) & 1;
       
       last;  
     };
@@ -1133,9 +1133,9 @@ sub OWXSWITCH_SetState($$) {
 #
 ########################################################################################
 
-sub OWXSWITCH_AfterSetState($$$) {
+sub OWXSWITCH_AfterSetState($$$$) {
 
-  my ($hash,$context,$readdata) = @_;
+  my ($hash,$context,$command,$readdata) = @_;
   
   
   #-- ID of the device
@@ -1149,7 +1149,10 @@ sub OWXSWITCH_AfterSetState($$$) {
     $context =~ /ds2406\.1\..*/ and do {
       
       my $value = substr($context,9);
-      my $stat    = ord(substr($readdata,1,1));
+      #TODO verify this is correct as V3.23 refers to byte 2 of command?
+      #-- reading 9 + 3 + 1 data bytes + 2 CRC bytes = 15 bytes
+      #my $stat    = ord(substr($res,10,1));
+      my $stat    = ord(substr($readdata,0,1)); 
       my $statneu = ( $stat & 159 ) | (($value<<5) & 96) ; 
       #-- issue the match ROM command \x55 and the write status command
       #   \x55 at address TA1 = \x07 TA2 = \x00
@@ -1175,9 +1178,11 @@ sub OWXSWITCH_AfterSetState($$$) {
       my @data=split(//,$readdata);
       
       #-- very crude check - should be CRC
-      if( int(@data) != 6){
+      if( int(@data) != 2){
         return "state could not be set for device $owx_dev";
-      } 
+      }
+      return "invalid CRC"
+        if (OWX_CRC16($command,$data[0],$data[1]) == 0);
       
       #-- put into local buffer
       $hash->{owg_val}->[0] = $value % 2;
@@ -1191,9 +1196,10 @@ sub OWXSWITCH_AfterSetState($$$) {
     $context =~ /ds2408.*/ and do {
 
       #-- process results
-      my @data=split(//,substr($readdata,1));
-    
-      if( $data[2] ne "\xAA"){
+      my @data=split(//,$readdata);
+      
+      return "invalid data length" if (@data != 1);
+      if( $readdata ne "\xAA"){
         return "state could not be set for device $owx_dev";
       }
       last;
@@ -1202,9 +1208,10 @@ sub OWXSWITCH_AfterSetState($$$) {
     $context =~ /ds2413.*/ and do {
       
       #-- process results
-      my @data=split(//,substr($readdata,1));
+      my @data=split(//,$readdata);
     
-      if( $data[2] ne "\xAA"){
+      return "invalid data length" if (@data != 1);
+      if( $readdata ne "\xAA"){
         return "state could not be set for device $owx_dev";
       }
       last;
@@ -1223,11 +1230,11 @@ sub OWXSWITCH_AfterExecute() {
   
   CONTEXT: {
     ($context =~ /^getstate.*/) and do {
-      return OWXSWITCH_AfterGetState($hash,substr($context,8), $readdata );
+      return OWXSWITCH_AfterGetState($hash,substr($context,8), $data, $readdata );
     };
 
     ($context =~ /^setstate.*/) and do {
-      return OWXSWITCH_AfterSetState($hash,substr($context,8), $readdata );
+      return OWXSWITCH_AfterSetState($hash,substr($context,8), $data, $readdata );
     };
   };
   $hash->{PRESENT} = 1; 
