@@ -994,12 +994,13 @@ sub OWXSWITCH_AfterGetState($$$$) {
       };
       
       last;
+    };
       
     #-- family = 3A => DS2413
     $context eq "ds2413" and do  {
       
       #-- process results
-      @data=split(//,$readdata);
+      my @data=split(//,$readdata);
       return "invalid data length, ".int(@data)." instead of 2 bytes"
         if (@data != 2); 
       return "invalid data"

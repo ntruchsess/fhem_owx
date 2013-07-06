@@ -905,7 +905,7 @@ sub OWXMULTI_SetValues($@) {
   return undef;
 }
 
-sub OWXCOUNT_AfterExecute() {
+sub OWXMULTI_AfterExecute() {
   my ( $hash, $context, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
   
   my $loglevel = main::GetLogLevel($hash->{NAME},6);

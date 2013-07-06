@@ -744,7 +744,7 @@ sub OWAD_InitializeDevice($) {
   $hash->{owg_val} = ["","","",""];
    
   #-- Initial alarm values
-  for( my $i=0;$i<int(@{$hash->{owg_fixed}});$i++) { 
+  for( my $i=0;$i<int(@owg_fixed);$i++) { 
     $hash->{ERRCOUNT}      = 0;
 
     #-- alarm enabling
@@ -1237,6 +1237,7 @@ sub OWXAD_GetPage($$) {
   } else {
     return "not accessible in reading $page page"; 
   }
+}
   
 ########################################################################################
 #
