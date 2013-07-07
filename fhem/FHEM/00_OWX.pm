@@ -164,7 +164,7 @@ sub OWX_Define ($$) {
 	#-- check syntax
    	return "OWX: Syntax error - must be define <name> OWX <serial-device>|<cuno/coc-device>|<arduino-pin>" if(int(@a) < 3);
 
-	Log 1,"OWX: Warning - Some parameter(s) ignored, must be define <name> OWX <serial-device>|<cuno/coc-device>|<arduino-pin>" if( int(@a)>3 );
+	Log (GetLogLevel($hash->{NAME},2),"OWX: Warning - Some parameter(s) ignored, must be define <name> OWX <serial-device>|<cuno/coc-device>|<arduino-pin>") if( int(@a)>3 );
 	my $dev = $a[2];
   
 	#-- Dummy 1-Wire ROM identifier, empty device lists
@@ -223,7 +223,7 @@ sub OWX_Poll ($) {
 sub OWX_Disconnect($) {
 	my ($hash) = @_;
 	my $async = $hash->{ASYNC};
-	main::Log (1, "OWX_Disconnect");
+	Log (GetLogLevel($hash->{NAME},3), "OWX_Disconnect");
 	if (defined $async) {
 		$async->exit($hash);
 	};
@@ -238,7 +238,7 @@ sub OWX_Disconnect($) {
 
 sub OWX_Disconnected($) {
 	my ($hash) = @_;
-	main::Log (1, "OWX_Disconnected");
+	Log (GetLogLevel($hash->{NAME},4), "OWX_Disconnected");
 	if (my $async = $hash->{ASYNC}) {
 		delete $hash->{ASYNC};
 	};
@@ -329,6 +329,15 @@ sub OWX_AwaitAlarmsResponse($) {
 sub OWX_AfterAlarms($$) {
   my ($hash,$alarmed_devs) = @_;
   $hash->{ALARMDEVS} = $alarmed_devs;
+  OWX_forall_clients($hash,sub {
+  	my ($hash,$alarmed_devs) = @_;
+  	my $romid = $hash->{ROM_ID};
+  	if (grep {/$romid/} @$alarmed_devs) {
+  		readingsSingleUpdate($hash,"ALARM",1,1) unless ($hash->{PRESENT});
+  	} else {
+  		readingsSingleUpdate($hash,"ALARM",0,1) if ($hash->{PRESENT});
+  	}
+  });
 };
 
 ########################################################################################
@@ -401,7 +410,8 @@ sub OWX_Complex ($$$$) {
 				$result .= $readdata;
  			};
 		};
-		Log 1, "OWX_Complex: $result";
+		my $loglevel = main::GetLogLevel($hash->{NAME},6);
+		main::Log($loglevel <6 ? $loglevel : 6,"OWX_Complex: $result");
 		return $result;
 	};
 	return 0;
@@ -612,7 +622,7 @@ sub OWX_Search($) {
 		if( !defined($owx_interface) ) {
 			return undef;
 		} else {
-			Log 1,"OWX: Search called with unknown interface $owx_interface";
+			Log (GetLogLevel($hash->{NAME},3),"OWX: Search called with unknown interface $owx_interface");
 			return undef;
 		} 
 	}
@@ -668,6 +678,15 @@ sub OWX_AfterSearch($$) {
   my ($hash,$owx_devs) = @_;
   if (defined $owx_devs and (ref($owx_devs) eq "ARRAY")) {
   	$hash->{DEVS} = $owx_devs;
+  	OWX_forall_clients($hash,sub {
+  		my ($hash,$owx_devs) = @_;
+  		my $romid = $hash->{ROM_ID};
+  		if (grep {/$romid/} @$owx_devs) {
+  			readingsSingleUpdate($hash,"PRESENT",1,1) unless ($hash->{PRESENT});
+  		} else {
+  			readingsSingleUpdate($hash,"PRESENT",0,1) if ($hash->{PRESENT});
+  		}
+  	});
   }
 }
 
@@ -694,7 +713,7 @@ sub OWX_AutoCreate($$) {
     foreach my $owx_dev  (@{$owx_devs}) {
       #-- ignore those which do not have the proper pattern
       if( !($owx_dev =~ m/[0-9A-F]{2}\.[0-9A-F]{12}\.[0-9A-F]{2}/) ){
-        Log 3,"OWX: Invalid 1-Wire device ID $owx_dev, ignoring it";
+        Log (GetLogLevel($hash->{NAME},3),"OWX: Invalid 1-Wire device ID $owx_dev, ignoring it");
         next;
       }
     
@@ -722,8 +741,8 @@ sub OWX_AutoCreate($$) {
         if( substr($id_fhem,3,12) eq substr($id_owx,3,12) ) {
           #-- warn if improper family id
           if( substr($id_fhem,0,2) ne substr($id_owx,0,2) ){
-            Log 1, "OWX: Warning, $fhem_dev is defined with improper family id ".substr($id_fhem,0,2). 
-             ", must enter correct model in configuration";
+            Log (GetLogLevel($hash->{NAME},3), "OWX: Warning, $fhem_dev is defined with improper family id ".substr($id_fhem,0,2). 
+             ", must enter correct model in configuration");
              #$main::defs{$fhem_dev}{OW_FAMILY} = substr($id_owx,0,2);
           }
           $exname=$main::defs{$fhem_dev}{NAME};
@@ -742,7 +761,7 @@ sub OWX_AutoCreate($$) {
         $chip     = $owg_family{$owx_f}[0];
         $acstring = $owg_family{$owx_f}[1];
       }else{  
-        Log 2, "OWX: Unknown family code '$owx_f' found";
+        Log (GetLogLevel($hash->{NAME},3), "OWX: Unknown family code '$owx_f' found");
         #-- All unknown families are ID only
         $chip     = "unknown";
         $acstring = "OWID $owx_f";  
@@ -799,12 +818,12 @@ sub OWX_AutoCreate($$) {
     if ( $main::defs{$fhem_dev}{IODev} ){
       next if( $main::defs{$fhem_dev}{IODev}{NAME} ne $hash->{NAME} );
     }
-    Log 1, "OWX: Deleting unused 1-Wire device $main::defs{$fhem_dev}{NAME} of type $main::defs{$fhem_dev}{TYPE}";
+    Log (GetLogLevel($hash->{NAME},3), "OWX: Deleting unused 1-Wire device $main::defs{$fhem_dev}{NAME} of type $main::defs{$fhem_dev}{TYPE}");
     CommandDelete(undef,$main::defs{$fhem_dev}{NAME});
     #Log 1, "present= ".$main::defs{$fhem_dev}{PRESENT}." iodev=".$main::defs{$fhem_dev}{IODev}{NAME};
   }
   #-- Log the discovered devices
-  Log 1, "OWX: 1-Wire devices found on bus $name (".join(",",@owx_names).")";
+  Log (GetLogLevel($hash->{NAME},2), "OWX: 1-Wire devices found on bus $name (".join(",",@owx_names).")");
   #-- tabular view as return value
   return "OWX: 1-Wire devices found on bus $name \n".$ret;
 }   
@@ -934,13 +953,27 @@ sub OWX_Kick($) {
     #-- issue the skip ROM command \xCC followed by start conversion command \x44 
     $ret = OWX_Complex($hash,"","\xCC\x44",0);
     if( $ret eq 0 ){
-      Log 3, "OWX: Failure in temperature conversion\n";
+      Log (GetLogLevel($hash->{NAME},3), "OWX: Failure in temperature conversion\n");
       return 0;
     }
     #-- sleeping for some time
     select(undef,undef,undef,0.5);
   }
   return 1;
+}
+
+sub
+OWX_forall_clients($$@)
+{
+  my ($hash,$fn,@args) = @_;
+  foreach my $d ( sort keys %main::defs ) {
+    if (   defined( $main::defs{$d} )
+      && defined( $main::defs{$d}{IODev} )
+      && $main::defs{$d}{IODev} == $hash ) {
+      	&$fn($main::defs{$d},@args);
+    }
+  }
+  return undef;
 }
 
 ########################################################################################
@@ -968,7 +1001,7 @@ sub OWX_Reset ($) {
 		if( !(defined($owx_interface))){
 			return 0;
 		} else {
-			Log 3,"OWX: Reset called with unknown interface $owx_interface";
+			Log (GetLogLevel($hash->{NAME},3),"OWX: Reset called with unknown interface $owx_interface");
 			return 0;
 		}
 	}
@@ -989,7 +1022,7 @@ sub OWX_Set($@) {
 
   #-- First we need to find the ROM ID corresponding to the device name
   my $owx_romid =  $hash->{ROM_ID};
-  Log 5, "OWX_Set request $name $owx_romid ".join(" ",@a);
+  Log (GetLogLevel($hash->{NAME},6), "OWX_Set request $name $owx_romid ".join(" ",@a));
 
   #-- for the selector: which values are possible
   return join(" ", sort keys %sets) if(@a != 2);
@@ -1021,7 +1054,7 @@ sub OWX_Set($@) {
   	}
     
   }
-  Log GetLogLevel($name,3), "OWX_Set $name ".join(" ",@a)." => $res";  
+  Log (GetLogLevel($name,3), "OWX_Set $name ".join(" ",@a)." => $res");  
   DoTrigger($name, undef) if($init_done);
   return "OWX_Set => $name ".join(" ",@a)." => $res";
 }
@@ -1155,9 +1188,9 @@ sub OWX_AwaitExecuteResponse($$$) {
 ########################################################################################
 
 sub OWX_AfterExecute($$$$$$$$) {
-	my ( $hash, $context, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
+	my ( $master, $context, $success, $reset, $owx_dev, $data, $numread, $readdata ) = @_;
 
-	my $loglevel = GetLogLevel($hash->{NAME},6);
+	my $loglevel = GetLogLevel($master->{NAME},6);
 	if ($loglevel < 6) {
 		main::Log($loglevel,"AfterExecute:".
 		" context: ".(defined $context ? $context : "undef").
@@ -1171,21 +1204,27 @@ sub OWX_AfterExecute($$$$$$$$) {
 
 	if (defined $owx_dev) {
 		foreach my $d ( sort keys %main::defs ) {
-			if (   defined( $main::defs{$d} )
-				&& defined( $main::defs{$d}{ROM_ID} )
-				&& defined( $main::defs{$d}{IODev} ) 
-				&& $main::defs{$d}{IODev} == $hash 
-				&& $main::defs{$d}{ROM_ID} eq $owx_dev ) {
-				if ($main::modules{$main::defs{$d}{TYPE}}{AfterExecuteFn}) {
-					my $ret = CallFn($d,"AfterExecuteFn", $main::defs{$d}, $context, $success, $reset, $owx_dev, $data, $numread, $readdata);
-					main::Log($loglevel < 6 ? $loglevel : 4,"OWX_AfterExecute [".(defined $owx_dev ? $owx_dev : "unknown owx device")."]: $ret") if ($ret);
+			if ( my $hash = $main::defs{$d} ) {
+				if ( defined( $hash->{ROM_ID} )
+				  && defined( $hash->{IODev} )
+				  && $hash->{IODev} == $master
+				  && $hash->{ROM_ID} eq $owx_dev ) {
+				  if ($main::modules{$hash->{TYPE}}{AfterExecuteFn}) {
+				    my $ret = CallFn($d,"AfterExecuteFn", $hash, $context, $success, $reset, $owx_dev, $data, $numread, $readdata);
+				    main::Log($loglevel < 6 ? $loglevel : 4,"OWX_AfterExecute [".(defined $owx_dev ? $owx_dev : "unknown owx device")."]: $ret") if ($ret);
+				    if ($success) {
+				      readingsSingleUpdate($hash,"PRESENT",1,1) unless ($hash->{PRESENT});
+				    } else {
+				      readingsSingleUpdate($hash,"PRESENT",0,1) if ($hash->{PRESENT});
+				    }
+					}
 				}
-			};
-		};
+			}
+		}
 		if (defined $context) {
-			$hash->{replies}{$owx_dev}{$context} = $readdata;
-		};
-	};
+			$master->{replies}{$owx_dev}{$context} = $readdata;
+		}
+	}
 };
 
 1;
