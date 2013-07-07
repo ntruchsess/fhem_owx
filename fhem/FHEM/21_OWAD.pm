@@ -164,7 +164,7 @@ sub OWAD_Initialize ($) {
   $hash->{owg_status} = [];
   $hash->{owg_state} = undef;
   #-- channel values - always the raw values from the device
-  $hash->{owg_val}=["","","",""];
+  $hash->{owg_val} = ["","","",""];
   #-- alarm status 0 = disabled, 1 = enabled, but not alarmed, 2 = alarmed
   $hash->{owg_slow}=[0,0,0,0];
   $hash->{owg_shigh}=[0,0,0,0];
@@ -363,8 +363,9 @@ sub OWAD_FormatValues($) {
   
   #-- insert initial values 
   for( my $k=0;$k<int(@owg_fixed);$k++ ){
-    $vfuncall .= "\$hash->{owg_val}->[$k]=$hash->{owg_val}->[$k];";
+    $vfuncall .= "\$hash->{owg_val}->[$k]=$hash->{owg_val}->[$k];"; #TODO $hash->{owg_val}->[..] might be undefined here?
   }
+
   my $alarm;
   my $galarm     = 0;
   my $achange    = 0;
@@ -379,7 +380,7 @@ sub OWAD_FormatValues($) {
   
   #-- no change in any value if invalid reading
   for (my $i=0;$i<int(@owg_fixed);$i++){
-    return if( ($hash->{owg_val}->[$i] eq "") || (!defined($hash->{owg_val}->[$i])) );
+    return "" if( (!defined($hash->{owg_val}->[$i])) || ($hash->{owg_val}->[$i] eq "") );
   }
   
   #-- obtain channel names
@@ -436,7 +437,7 @@ sub OWAD_FormatValues($) {
     #-- Test for alarm condition
     $alarm = "none";
     #-- alarm signature low
-    if( $hash->{owg_slow}->[$i] == 0 ) {
+    if( $hash->{owg_slow}->[$i] == 0 ) { #TODO may be undefined here?
     } else {
       $alarm="low";
       if( $vval > $vlow ){
@@ -449,7 +450,7 @@ sub OWAD_FormatValues($) {
       }
     }
     #-- alarm signature high
-    if( $hash->{owg_shigh}->[$i] == 0 ) {
+    if( $hash->{owg_shigh}->[$i] == 0 ) { #TODO may be undefined here?
     } else {
       if( $alarm eq "low") {
         $alarm="both";
@@ -544,7 +545,7 @@ sub OWAD_Get($@) {
     #-- OWX interface
     if( $interface eq "OWX" ){
       $ret = OWXAD_GetPage($hash,"reading");
-      OWXAD_AwaitGetPage($hash,"reading");
+      OWXAD_AwaitGetPage($hash,"reading") unless defined $ret;
     #-- OWFS interface
     }elsif( $interface eq "OWServer" ){
       $ret = OWFSAD_GetPage($hash,"reading");
@@ -570,7 +571,7 @@ sub OWAD_Get($@) {
     #-- OWX interface
     if( $interface eq "OWX" ){
       $ret = OWXAD_GetPage($hash,"alarm");
-      OWXAD_AwaitGetPage($hash,"alarm");
+      OWXAD_AwaitGetPage($hash,"alarm") unless defined $ret;
     #-- OWFS interface
     }elsif( $interface eq "OWServer" ){
       $ret = OWFSAD_GetPage($hash,"alarm");
@@ -605,7 +606,7 @@ sub OWAD_Get($@) {
     #-- OWX interface
     if( $interface eq "OWX" ){
       $ret = OWXAD_GetPage($hash,"status");
-      OWXAD_AwaitGetPage($hash,"status");
+      OWXAD_AwaitGetPage($hash,"status") unless defined $ret;
     #-- OWFS interface
     }elsif( $interface eq "OWServer" ){
       $ret = OWFSAD_GetPage($hash,"status");
@@ -633,18 +634,24 @@ sub OWAD_Get($@) {
       #  if ( !($sb2 && 128) );
       $value .=  sprintf "raw range %3.1f V, ",$owg_range[$i]/1000;
       $value .=  sprintf "resolution %d bit, ",$owg_resoln[$i];
-      $value .=  sprintf "low alarm disabled, "
-        if( $hash->{owg_slow}->[$i]==0 );
-      $value .=  sprintf "low alarm enabled, "
-        if( $hash->{owg_slow}->[$i]==1 );
-      $value .=  sprintf "alarmed low, "
-        if( $hash->{owg_slow}->[$i]==2 ); 
-      $value .=  sprintf "high alarm disabled"
-        if( $hash->{owg_shigh}->[$i]==0 );
-      $value .=  sprintf "high alarm enabled"
-        if( $hash->{owg_shigh}->[$i]==1 );
-      $value .=  sprintf "alarmed high"
-        if( $hash->{owg_shigh}->[$i]==2 );
+      if (!defined $hash->{owg_slow}->[$i]) {
+        $value .= "low alarm undefined, ";
+      } elsif( $hash->{owg_slow}->[$i]==0 ) { 
+        $value .= "low alarm disabled, ";
+      } elsif( $hash->{owg_slow}->[$i]==1 ) {
+        $value .= "low alarm enabled, ";
+      } elsif( $hash->{owg_slow}->[$i]==2 ) {
+        $value .= "alarmed low, ";
+      }
+      if (!defined $hash->{owg_shigh}) {
+        $value .= "high aralm undefined";
+      } elsif( $hash->{owg_shigh}->[$i]==0 ) {
+        $value .= "high alarm disabled";
+      } elsif( $hash->{owg_shigh}->[$i]==1 ) {
+        $value .= "high alarm enabled";
+      } elsif( $hash->{owg_shigh}->[$i]==2 ) {
+        $value .= "alarmed high";
+      }
       #-- insert space
       if( $i<int(@owg_fixed)-1 ){
         $value .= "\n";
@@ -695,7 +702,7 @@ sub OWAD_GetValues($) {
       $ret2 = OWXAD_GetPage($hash,"alarm");
       $ret3 = OWXAD_GetPage($hash,"status");
       return
-        if( (!defined($ret)) && (!defined($ret2)) && (!defined($ret3))  );
+        if( (!defined($ret1)) && (!defined($ret2)) && (!defined($ret3))  );
     } 
   }elsif( $interface eq "OWServer" ){
     $ret1 = OWFSAD_GetPage($hash,"reading");
@@ -771,7 +778,7 @@ sub OWAD_InitializeDevice($) {
     #-- high alarm value
     if( AttrVal($name,$owg_fixed[$i]."High",undef) ){
       $hash->{owg_vhigh}->[$i] = $main::attr{$name}{$owg_fixed[$i]."High"};
-    }      
+    } #TODO some values might be undefined here?
       Log 1,"+++++++++> Alarm enabling for $name channel $i is $hash->{owg_slow}->[$i] $hash->{owg_shigh}->[$i] $hash->{owg_vlow}->[$i] $hash->{owg_vhigh}->[$i]";      
   }
   #-- resolution in bit - fixed for now
@@ -787,7 +794,6 @@ sub OWAD_InitializeDevice($) {
     $ret1 = OWFSAD_SetPage($hash,"status");
     $ret2 = OWFSAD_SetPage($hash,"alarm");
   }
-  Log 1,"Status return $ret1 $ret2";
   #-- process results
   $ret .= $ret1
     if( defined($ret1) );
@@ -1205,9 +1211,7 @@ sub OWXAD_GetPage($$) {
   if( $page eq "reading") {
     #-- issue the match ROM command \x55 and the start conversion command
     #-- conversion needs some 5 ms per channel
-    if (OWX_Execute( $master, "getpageconvert", 1, $owx_dev, "\x3C\x0F\x00\xFF\xFF", 0, 20 )) {
-  		return undef;
-  	} else {
+    if (!OWX_Execute( $master, "getpageconvert", 1, $owx_dev, "\x3C\x0F\x00\xFF\xFF", 0, 20 )) {
       return "not accessible for conversion";
     }
     #-- issue the match ROM command \x55 and the read conversion page command
@@ -1249,11 +1253,11 @@ sub OWXAD_GetPage($$) {
 
 sub OWXAD_AfterGetPage($$$$) {
   my ( $hash, $page, $command, $readdata ) = @_;
-
+  
   #-- hash of the busmaster
   my $master = $hash->{IODev};
   
-  return if $page eq "convert";
+  return undef if $page eq "convert";
   
   #-- process results
   my @data=split(//,$readdata);
@@ -1375,7 +1379,7 @@ sub OWXAD_SetPage($$) {
     #   \x55\x10\x00 reading 8 data bytes and 2 CRC bytes
     $select="\x55\x10\x00";
     for( $i=0;$i<int(@owg_fixed);$i++){
-      $select .= sprintf "%c\xFF\xFF\xFF",int($hash->{owg_vlow}->[$i]*255000/$owg_range[$i]);
+      $select .= sprintf "%c\xFF\xFF\xFF",int($hash->{owg_vlow}->[$i]*255000/$owg_range[$i]); #TODO some values might be undefined here?
       $select .= sprintf "%c\xFF\xFF\xFF",int($hash->{owg_vhigh}->[$i]*255000/$owg_range[$i]);
     }
   #=============== set the status ===============================
