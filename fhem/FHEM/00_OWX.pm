@@ -863,7 +863,7 @@ sub OWX_Get($@) {
     
   } else {
     return "OWX: Get with unknown argument $a[1], choose one of ". 
-    join(",", sort keys %gets);
+    join(" ", sort keys %gets);
   }
 }
 
@@ -894,7 +894,7 @@ sub OWX_Init ($) {
   	  #-- Third step: see, if a bus interface is detected
   	if (my $ret = $owx->Init($hash)) {
       $hash->{PRESENT} = 0;
-      $hash->{STATE} = "Init Failed";
+      $hash->{STATE} = "Init Failed: $ret";
       #readingsSingleUpdate($hash,"state","failed",1);
       #$main::init_done = 1; 
       return "OWX_Init failed: $ret";

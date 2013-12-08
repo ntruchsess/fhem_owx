@@ -1,6 +1,7 @@
 ##############################################
 package main;
 
+use vars qw{%attr %defs}; 
 use strict;
 use warnings;
 
@@ -14,7 +15,6 @@ BEGIN {
 };
 
 use Device::Firmata::Constants qw/ :all /;
-use Device::Firmata::IO;
 use Device::Firmata::Protocol;
 use Device::Firmata::Platform;
 
@@ -97,15 +97,18 @@ sub FRM_Undef($) {
 	if (defined $hash->{DeviceName}) {
 		DevIo_Disconnected($hash);
 	};
-	my $device = $hash->{FirmataDevice};
-	if (defined $device) {
-		if (defined $device->{io}) {
-			delete $hash->{FirmataDevice}->{io}->{handle} if defined $hash->{FirmataDevice}->{io}->{handle};
-			delete $hash->{FirmataDevice}->{io};
+	
+	foreach my $d ( sort keys %main::defs ) { # close and dispose open tcp-connection (if any) to free open filedescriptors
+		if ( defined( my $dev = $main::defs{$d} )) {
+			if ( defined( $main::defs{$d}{SNAME} )
+				&& $main::defs{$d}{SNAME} eq $hash->{NAME}) {
+					FRM_Tcp_Connection_Close($main::defs{$d});
+				}
 		}
-		delete $device->{protocol} if defined $device->{protocol};
-		delete $hash->{FirmataDevice};
 	}
+
+	FRM_FirmataDevice_Close($hash);
+
 	return undef;
 }
 
@@ -168,6 +171,16 @@ sub FRM_Read($) {
 		return if(!$chash);
 		$chash->{DeviceName}=$hash->{PORT}; # required for DevIo_CloseDev and FRM_Ready
 		$chash->{TCPDev}=$chash->{CD};
+		
+		# dispose preexisting connections
+		foreach my $e ( sort keys %main::defs ) {
+			if ( defined( my $dev = $main::defs{$e} )) {
+				if ( $dev != $chash && defined( $dev->{SNAME} ) && ( $dev->{SNAME} eq $chash->{SNAME} )) {
+					FRM_Tcp_Connection_Close($dev);
+				}
+			}
+		}
+		FRM_FirmataDevice_Close($hash);
 		FRM_DoInit($chash);
 		return;
 	}
@@ -180,13 +193,8 @@ sub FRM_Ready($) {
 	my ($hash) = @_;
 	my $name = $hash->{NAME};
 	if ($name=~/^^FRM:.+:\d+$/) { # this is a closed tcp-connection, remove it
-		TcpServer_Close($hash);
-		delete $main::defs{$hash->{SNAME}}{FirmataDevice} if (defined $hash->{SNAME} && defined $main::defs{$hash->{SNAME}}{FirmataDevice});
-		my $dev = $hash->{DeviceName};
-		delete $main::readyfnlist{"$name.$dev"};
-  		delete $main::attr{$name};
-  		delete $main::defs{$name};		
-		return undef;
+		FRM_Tcp_Connection_Close($hash);
+		FRM_FirmataDevice_Close($hash);
 	}
 	return DevIo_OpenDev($hash, 1, "FRM_DoInit") if($hash->{STATE} eq "disconnected");
 	
@@ -197,6 +205,36 @@ sub FRM_Ready($) {
 		($BlockingFlags, $InBytes, $OutBytes, $ErrorFlags) = $po->status;
 	}
 	return ($InBytes && $InBytes>0);
+}
+
+sub FRM_Tcp_Connection_Close($) {
+	my $hash = shift;
+	TcpServer_Close($hash);
+	if ($hash->{SNAME}) {
+		my $shash = $main::defs{$hash->{SNAME}};
+		$hash->{SocketDevice} = undef if (defined $shash);
+	}
+	my $dev = $hash->{DeviceName};
+	my $name = $hash->{NAME};
+	if (defined $name) {
+		delete $main::readyfnlist{"$name.$dev"} if (defined $dev);
+		delete $main::attr{$name};
+		delete $main::defs{$name};
+	}
+	return undef;
+}
+
+sub FRM_FirmataDevice_Close($) {
+	my $hash = shift;
+	my $device = $hash->{FirmataDevice};
+	if (defined $device) {
+		if (defined $device->{io}) {
+			delete $hash->{FirmataDevice}->{io}->{handle} if defined $hash->{FirmataDevice}->{io}->{handle};
+			delete $hash->{FirmataDevice}->{io};
+		}
+		delete $device->{protocol} if defined $device->{protocol};
+		delete $hash->{FirmataDevice};
+	}
 }
 
 sub FRM_Attr(@) {
@@ -252,7 +290,7 @@ sub FRM_DoInit($) {
 	
 	my $name = $hash->{SNAME}; #is this a serversocket-connection?
 	my $shash = defined $name ? $main::defs{$name} : $hash;
-	$name = $hash->{NAME} if (!defined $name);
+	$name = $hash->{NAME};# if (!defined $name);
 	
   	my $firmata_io = Firmata_IO->new($hash);
 	my $device = Device::Firmata::Platform->attach($firmata_io) or return 1;
@@ -328,6 +366,7 @@ sub FRM_DoInit($) {
 	} while (time < $endTicks and !$found);
 	if ($found) {
 		$shash->{FirmataDevice} = $device;
+		$shash->{SocketDevice} = $hash;
 		FRM_apply_attribute($shash,"sampling-interval");
 		FRM_apply_attribute($shash,"i2c-config");
 		FRM_forall_clients($shash,\&FRM_Init_Client,undef);
@@ -354,7 +393,7 @@ FRM_forall_clients($$$)
 }
 
 sub
-FRM_Init_Client($$) {
+FRM_Init_Client($@) {
 	my ($hash,$args) = @_;
 	if (!defined $args and defined $hash->{DEF}) {
   		my @a = split("[ \t][ \t]*", $hash->{DEF});
@@ -372,14 +411,16 @@ FRM_Init_Pin_Client($$$) {
 	my $u = "wrong syntax: define <name> FRM_XXX pin";
   	return $u unless defined $args and int(@$args) > 0;
  	my $pin = @$args[0];
-  	$hash->{PIN} = $pin;
-  eval {
-    FRM_Client_FirmataDevice($hash)->pin_mode($pin,$mode);
+ 	
+	$hash->{PIN} = $pin;
+	eval {
+		FRM_Client_AssignIOPort($hash);
+		FRM_Client_FirmataDevice($hash)->pin_mode($pin,$mode);
 	};
 	if ($@) {
-		main::Log(2,"FRM_Init error setting pin_mode: ".$@);
-		#FRM_Client_Unassign($hash);
-		return "error setting ".$hash->{NAME}." pin_mode for pin ".$pin;
+		$@ =~ /^(.*)( at.*FHEM.*)$/;
+		$hash->{STATE} = "error initializing: ".$1;
+		return "error initializing '".$hash->{NAME}."': ".$1;
 	}
 	return undef;
 }
@@ -392,16 +433,29 @@ FRM_Client_Define($$)
 
   $hash->{STATE}="defined";
   
-  AssignIoPort($hash);
-  FRM_Init_Client($hash,[@a[2..scalar(@a)-1]]);
-    
-  return undef;
+  eval {
+    FRM_Init_Client($hash,[@a[2..scalar(@a)-1]]);
+  };
+  return $@;
 }
 
 sub
 FRM_Client_Undef($$)
 {
   my ($hash, $name) = @_;
+  my $pin = $hash->{PIN};
+  eval {
+    my $firmata = FRM_Client_FirmataDevice($hash);
+    $firmata->pin_mode($pin,PIN_ANALOG);
+  };
+  if ($@) {
+    eval {
+      my $firmata = FRM_Client_FirmataDevice($hash);
+      $firmata->pin_mode($pin,PIN_INPUT);
+      $firmata->digital_write($pin,0);
+    };
+  }
+  return undef;
 }
 
 sub
@@ -410,6 +464,32 @@ FRM_Client_Unassign($)
   my ($dev) = @_;
   delete $dev->{IODev} if defined $dev->{IODev};
   $dev->{STATE}="defined";  
+}
+
+sub
+FRM_Client_AssignIOPort($)
+{
+	my $hash = shift;
+	my $name = $hash->{NAME};
+	if (my $iodev = AttrVal($name,"IODev",undef)) {
+	  $hash->{IODev} = $defs{$iodev};
+	}
+	AssignIoPort($hash) unless defined($hash->{IODev});
+	die "unable to assign IODev to '$name'" unless defined ($hash->{IODev});
+	
+	$hash->{IODev} = $main::defs{$hash->{IODev}->{SNAME}} if (defined($hash->{IODev}->{SNAME}));
+
+	foreach my $d ( sort keys %main::defs ) {
+		if ( defined( my $dev = $main::defs{$d} )) {
+			if ( $dev != $hash
+				&& defined( $dev->{IODev} )
+				&& defined( $dev->{PIN} )
+				&& $dev->{IODev} == $hash->{IODev}
+				&& $dev->{PIN} == $hash->{PIN} ) {
+					die "Device $main::defs{$d}{NAME} allready defined for pin $hash->{PIN}";
+				}
+		}
+	}
 }
 
 sub FRM_Client_FirmataDevice($) {
@@ -479,7 +559,16 @@ sub FRM_string_observer
 sub FRM_poll
 {
 	my ($hash) = @_;
-	if (defined $hash->{FD}) {
+	if (defined $hash->{SocketDevice} and defined $hash->{SocketDevice}->{FD}) {
+		my ($rout, $rin) = ('', '');
+    	vec($rin, $hash->{SocketDevice}->{FD}, 1) = 1;
+    	my $nfound = select($rout=$rin, undef, undef, 0.1);
+    	my $mfound = vec($rout, $hash->{SocketDevice}->{FD}, 1); 
+		if($mfound && defined $hash->{FirmataDevice}) {
+			$hash->{FirmataDevice}->poll();
+		}
+		return $mfound;
+	} elsif (defined $hash->{FD}) {
 		my ($rout, $rin) = ('', '');
     	vec($rin, $hash->{FD}, 1) = 1;
     	my $nfound = select($rout=$rin, undef, undef, 0.1);
@@ -519,7 +608,7 @@ FRM_OWX_Init($$)
 		$firmata->onewire_config($pin,1);
 	}
 	$hash->{STATE}="Initialized";
-	$firmata->onewire_search($pin);
+	InternalTimer(gettimeofday()+10, "OWX_Discover", $hash,0);
 	return undef;
 }
 
@@ -589,7 +678,7 @@ sub FRM_OWX_firmata_to_device
 
 sub FRM_OWX_Verify {
 	my ($hash,$dev) = @_;
-	foreach my $found ($hash->{DEVS}) {
+	foreach my $found (@{$hash->{DEVS}}) {
 		if ($dev eq $found) {
 			return 1;
 		}

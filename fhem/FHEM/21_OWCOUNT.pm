@@ -74,12 +74,12 @@
 ########################################################################################
 package main;
 
-use vars qw{%attr %defs};
+use vars qw{%attr %defs %modules $readingFnAttributes $init_done};
 use strict;
 use warnings;
 sub Log($$);
 
-my $owx_version="4.30";
+my $owx_version="4.31";
 #-- fixed raw channel name, flexible channel name
 my @owg_fixed   = ("A","B");
 my @owg_channel = ("A","B");
@@ -135,9 +135,11 @@ sub OWCOUNT_Initialize ($) {
   $hash->{GetFn}   = "OWCOUNT_Get";
   $hash->{SetFn}   = "OWCOUNT_Set";
   $hash->{AfterExecuteFn} = "OWXCOUNT_AfterExecute";
-  
+  $hash->{AttrFn}  = "OWCOUNT_Attr";
+
   #-- see header for attributes
   my $attlist = "IODev do_not_notify:0,1 showtime:0,1 model:DS2423 loglevel:0,1,2,3,4,5 LogM LogY ".
+                "interval ".
                 $readingFnAttributes;
   for( my $i=0;$i<int(@owg_fixed);$i++ ){
     $attlist .= " ".$owg_fixed[$i]."Name";
@@ -149,6 +151,9 @@ sub OWCOUNT_Initialize ($) {
     $attlist .= " ".$owg_fixed[$i]."Period:hour,minute,second";
   }
   $hash->{AttrList} = $attlist; 
+
+  #make sure OWX is loaded so OWX_CRC is available if running with OWServer
+  main::LoadModule("OWX");	
 }
 
 #########################################################################################
@@ -211,10 +216,10 @@ sub OWCOUNT_Define ($$) {
   }
    
   #   determine CRC Code - only if this is a direct interface
-  $crc = defined($hash->{IODev}->{INTERFACE}) ?  sprintf("%02x",OWX_CRC($fam.".".$id."00")) : "00";
+  $crc = sprintf("%02x",OWX_CRC($fam.".".$id."00"));
   
   #-- Define device internals
-  $hash->{ROM_ID}     = $fam.".".$id.".".$crc;
+  $hash->{ROM_ID}     = "$fam.$id.$crc";
   $hash->{OW_ID}      = $id;
   $hash->{OW_FAMILY}  = $fam;
   $hash->{PRESENT}    = 0;
@@ -237,6 +242,39 @@ sub OWCOUNT_Define ($$) {
   InternalTimer(time()+10, "OWCOUNT_GetValues", $hash, 0);
 
   return undef; 
+}
+
+#######################################################################################
+#
+# OWCOUNT_Attr - Set one attribute value for device
+#
+#  Parameter hash = hash of device addressed
+#            a = argument array
+#
+########################################################################################
+
+sub OWCOUNT_Attr(@) {
+  my ($do,$name,$key,$value) = @_;
+  
+  my $hash = $defs{$name};
+  my $ret;
+  
+  if ( $do eq "set") {
+  	ARGUMENT_HANDLER: {
+  	  $key eq "interval" and do {
+        # check value
+        return "OWCOUNT: Set with short interval, must be > 1" if(int($value) < 1);
+        # update timer
+        $hash->{INTERVAL} = $value;
+        if ($init_done) {
+          RemoveInternalTimer($hash);
+          InternalTimer(gettimeofday()+$hash->{INTERVAL}, "OWCOUNT_GetValues", $hash, 1);
+        }
+  	    last;
+  	  };
+    }
+  }
+  return $ret;
 }
 
 ########################################################################################
@@ -530,7 +568,7 @@ sub OWCOUNT_Get($@) {
     if(int(@a) < 2);
     
   #-- check argument
-  return "OWCOUNT: Get with unknown argument $a[1], choose one of ".join(",", sort keys %gets)
+  return "OWCOUNT: Get with unknown argument $a[1], choose one of ".join(" ", sort keys %gets)
     if(!defined($gets{$a[1]}));
 
   #-- get id
@@ -1080,7 +1118,7 @@ sub OWFSCOUNT_GetPage($$) {
     # $owg_str =~ /([\d\.]+)/;
     #   a la truchsess
     $owg_str =~ s/[^\d\.]+//g;
-    $owg_str = 0.0 unless ($owg_str);
+    $owg_str = 0.0 if(!defined($owg_str) or $owg_str !~ /^\d+\.?\d*$/);
     $owg_str = int($owg_str*100)/100;
     $owg_midnight[0] = $owg_str;
     
@@ -1097,7 +1135,7 @@ sub OWFSCOUNT_GetPage($$) {
     $owg_val[1]      = $vval;
     #-- parse float from midnight
     $owg_str =~ s/[^\d\.]+//g;
-    $owg_str = 0.0 unless ($owg_str);
+    $owg_str = 0.0 if(!defined($owg_str) or $owg_str !~ /^\d+\.\d*$/);
     $owg_str = int($owg_str*100)/100;
     $owg_midnight[1] = $owg_str;
   }else {
@@ -1210,7 +1248,7 @@ sub OWXCOUNT_AfterGetPage($$$$$) {
       # $owg_str =~ /([\d\.]+)/;
       #   a la truchsess
       $owg_str =~ s/[^\d\.]+//g;
-      $owg_str = 0.0 unless ($owg_str);
+      $owg_str = 0.0 if(!defined($owg_str) or $owg_str !~ /^\d+\.\d*$/);
       $owg_str = int($owg_str*100)/100;
       $owg_midnight[0] = $owg_str;
     }elsif( $page == 15) {
@@ -1219,7 +1257,7 @@ sub OWXCOUNT_AfterGetPage($$$$$) {
       # $owg_str =~ /([\d\.]+)/;
       #   a la truchsess
       $owg_str =~ s/[^\d\.]+//g;
-      $owg_str = 0.0 unless ($owg_str);
+      $owg_str = 0.0 if(!defined($owg_str) or $owg_str !~ /^\d+\.\d*$/);
       $owg_str = int($owg_str*100)/100;
       $owg_midnight[1] = $owg_str;
     }
